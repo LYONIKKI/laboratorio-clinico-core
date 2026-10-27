@@ -1,0 +1,11 @@
+# Variables de entorno con contraseñas reales
+.env
+readme
+# Dependencias de composer
+/vendor/
+composer.phar
+
+# Archivos de configuración local y logs
+*.log
+.vscode/
+.idea/

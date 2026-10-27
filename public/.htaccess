@@ -1,0 +1,12 @@
+# /var/www/html/laboratorio/public/.htaccess
+RewriteEngine On
+
+# IMPORTANTE: Le dice a Apache que todo parte desde public de laboratorio
+RewriteBase /laboratorio/public/
+
+# Evita que se busque el archivo físico si no existe
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Envía todo al index.php de Slim
+RewriteRule ^ index.php [QSA,L]
