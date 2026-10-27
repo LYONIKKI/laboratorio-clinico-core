@@ -67,8 +67,8 @@
                     <select id="filtroTiempo" 
                             class="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition cursor-pointer">
                         <option value="3" selected>Últimos 3 Días</option>
-                        <option value="5">Últimos 5 Días</option>
-                        <option value="15_PENDIENTES">15 Días (Solo Pendientes)</option>
+                        <!-- <option value="5">Últimos 5 Días</option>
+                        <option value="15_PENDIENTES">15 Días (Solo Pendientes)</option> -->
                     </select>
                 </div>
 
