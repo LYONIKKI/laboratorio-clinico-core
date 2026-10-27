@@ -97,3 +97,5 @@ psql -U tu_usuario -d tu_bd -f databasepg/schema.sql
 |:---:|:---:|
 | ![Modal Reportes](docs/screenshots/modal_reportes.png) | ![Excel Formateado](docs/screenshots/reporte_excel.png) |
 
+### Registro de donantes
+![Registro de donantes](docs/screenshots/registro_donantes.png)
