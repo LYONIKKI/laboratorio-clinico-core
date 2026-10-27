@@ -84,6 +84,10 @@ cp .env.example .env
 psql -U tu_usuario -d tu_bd -f databasepg/schema.sql
 
 ## 📸 Demostración Visual de la Plataforma
+## LOGIN
+![login central](docs/screenshots/login.png)
+
+## 📸 Demostración Visual de la Plataforma
 
 ### Tablero de Control de Turno y Demanda Analítica
 ![Tablero de Control](docs/screenshots/tablero_control.png)
@@ -92,3 +96,4 @@ psql -U tu_usuario -d tu_bd -f databasepg/schema.sql
 | Selector de Filtros y Rango de Turno | Reporte Oficial Generado (Formato GalenPlus) |
 |:---:|:---:|
 | ![Modal Reportes](docs/screenshots/modal_reportes.png) | ![Excel Formateado](docs/screenshots/reporte_excel.png) |
+
