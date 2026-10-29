@@ -446,4 +446,380 @@ class ReportesController {
             ->withHeader('Cache-Control', 'max-age=0')
             ->withStatus(200);
     }
+
+    // =========================================================================
+    // 4. REPORTE: CONSOLIDADO DE GASTOS Y PRODUCTIVIDAD CPT (MATRIZ POR SERVICIO)
+    // =========================================================================
+    public function reporteConsolidadoGastos(Request $request, Response $response) {
+        $conn = $this->container->get('db');
+        $params = $request->getQueryParams();
+        list($fechaInicio, $fechaFin) = $this->formatearRangoFechasHoras($params);
+
+        $sql = "SET DATEFORMAT ymd;
+                WITH MovimientosBase AS (
+                    SELECT 
+                        fcs.Codigo AS CodigoCPT,
+                        fcs.Nombre AS NombrePrueba,
+                        cpt.cantidad,
+                        cpt.importe,
+                        CASE 
+                            WHEN ISNULL(ff.IdTipoFinanciamiento, fos.idTipoFinanciamiento) = 1 
+                                 OR UPPER(ISNULL(ff.Descripcion, '')) LIKE '%PARTICULAR%'
+                                THEN 'PARTICULAR'
+                            WHEN ISNULL(a.IdTipoServicio, s.IdTipoServicio) = 2 
+                                THEN 'EMERGENCIA'
+                            WHEN ISNULL(a.IdTipoServicio, s.IdTipoServicio) = 3 
+                                THEN 'HOSPITALIZACION'
+                            ELSE 'CONSULTORIO_EXTERNO'
+                        END AS Ambito
+                    FROM dbo.LabMovimiento AS L WITH (NOLOCK)
+                    INNER JOIN dbo.LabMovimientoLaboratorio AS LML WITH (NOLOCK) 
+                        ON L.IdMovimiento = LML.IdMovimiento
+                    INNER JOIN dbo.LabMovimientoCPT AS cpt WITH (NOLOCK) 
+                        ON L.IdMovimiento = cpt.idMovimiento
+                    INNER JOIN dbo.FactCatalogoServicios AS fcs WITH (NOLOCK) 
+                        ON cpt.idProductoCPT = fcs.IdProducto
+                    LEFT JOIN dbo.Atenciones AS a WITH (NOLOCK) 
+                        ON LML.IdCuentaAtencion = a.IdCuentaAtencion
+                    LEFT JOIN dbo.FactOrdenServicio AS fos WITH (NOLOCK) 
+                        ON LML.IdOrden = fos.IdOrden
+                    LEFT JOIN dbo.Servicios AS s WITH (NOLOCK) 
+                        ON s.IdServicio = COALESCE(fos.IdServicioPaciente, a.IdServicioIngreso)
+                    LEFT JOIN dbo.FuentesFinanciamiento AS ff WITH (NOLOCK) 
+                        ON a.IdFuenteFinanciamiento = ff.idFuenteFinanciamiento
+                    WHERE L.Fecha >= CONVERT(DATETIME, '$fechaInicio', 120) 
+                      AND L.Fecha <= CONVERT(DATETIME, '$fechaFin', 120)
+                      AND L.IdPuntoCarga = 2
+                      AND ISNULL(L.IdLabEstado, 0) != 9
+                ),
+                ResumenAgrupado AS (
+                    SELECT 
+                        CodigoCPT,
+                        NombrePrueba,
+                        ISNULL(SUM(CASE WHEN Ambito = 'PARTICULAR' THEN cantidad ELSE 0 END), 0) AS Cant_Particular,
+                        ISNULL(SUM(CASE WHEN Ambito = 'PARTICULAR' THEN importe ELSE 0.00 END), 0.00) AS Monto_Particular,
+                        ISNULL(SUM(CASE WHEN Ambito = 'CONSULTORIO_EXTERNO' THEN cantidad ELSE 0 END), 0) AS Cant_CE,
+                        ISNULL(SUM(CASE WHEN Ambito = 'CONSULTORIO_EXTERNO' THEN importe ELSE 0.00 END), 0.00) AS Monto_CE,
+                        ISNULL(SUM(CASE WHEN Ambito = 'EMERGENCIA' THEN cantidad ELSE 0 END), 0) AS Cant_Emergencia,
+                        ISNULL(SUM(CASE WHEN Ambito = 'EMERGENCIA' THEN importe ELSE 0.00 END), 0.00) AS Monto_Emergencia,
+                        ISNULL(SUM(CASE WHEN Ambito = 'HOSPITALIZACION' THEN cantidad ELSE 0 END), 0) AS Cant_Hosp,
+                        ISNULL(SUM(CASE WHEN Ambito = 'HOSPITALIZACION' THEN importe ELSE 0.00 END), 0.00) AS Monto_Hosp,
+                        SUM(cantidad) AS Cant_Total,
+                        SUM(importe)  AS Monto_Total
+                    FROM MovimientosBase
+                    GROUP BY CodigoCPT, NombrePrueba
+                )
+                SELECT 
+                    CAST(ROW_NUMBER() OVER(ORDER BY CodigoCPT ASC) AS VARCHAR(10)) AS Nro,
+                    CodigoCPT,
+                    NombrePrueba,
+                    Cant_Particular,
+                    Monto_Particular,
+                    Cant_CE,
+                    Monto_CE,
+                    Cant_Emergencia,
+                    Monto_Emergencia,
+                    Cant_Hosp,
+                    Monto_Hosp,
+                    Cant_Total,
+                    Monto_Total,
+                    0 AS EsFilaTotal
+                FROM ResumenAgrupado
+                UNION ALL
+                SELECT 
+                    '' AS Nro,
+                    '' AS CodigoCPT,
+                    'TOTAL' AS NombrePrueba,
+                    SUM(Cant_Particular),
+                    SUM(Monto_Particular),
+                    SUM(Cant_CE),
+                    SUM(Monto_CE),
+                    SUM(Cant_Emergencia),
+                    SUM(Monto_Emergencia),
+                    SUM(Cant_Hosp),
+                    SUM(Monto_Hosp),
+                    SUM(Cant_Total),
+                    SUM(Monto_Total),
+                    1 AS EsFilaTotal
+                FROM ResumenAgrupado
+                ORDER BY EsFilaTotal ASC, CodigoCPT ASC";
+
+        $stmt = sqlsrv_query($conn, $sql);
+        if ($stmt === false) {
+            $err = sqlsrv_errors();
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => $err[0]['message'] ?? 'Error SQL']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+
+        $filas = [];
+        while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+            $filas[] = $row;
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Productividad');
+        $sheet->setShowGridLines(true);
+
+        $fIniTxt = date('d/m/Y H:i:s', strtotime($fechaInicio));
+        $fFinTxt = date('d/m/Y H:i:s', strtotime($fechaFin));
+
+        // Título Principal
+        $sheet->mergeCells('B1:N1');
+        $sheet->setCellValue('B1', 'PRODUCTIVIDAD DE LABORATORIO');
+        $sheet->getStyle('B1')->getFont()->setName('Arial')->setSize(12)->setBold(true);
+        $sheet->getStyle('B1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getRowDimension(1)->setRowHeight(24);
+
+        // Subtítulo con Rango
+        $sheet->mergeCells('B2:N2');
+        $sheet->setCellValue('B2', "Fecha Inicio $fIniTxt  -  Fecha Fin: $fFinTxt");
+        $sheet->getStyle('B2')->getFont()->setName('Arial')->setSize(9)->setBold(true);
+        $sheet->getStyle('B2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getRowDimension(2)->setRowHeight(18);
+
+        // Cabecera Nivel 1 (Fila 4)
+        $sheet->mergeCells('B4:B5');
+        $sheet->setCellValue('B4', 'Nº');
+        $sheet->mergeCells('C4:C5');
+        $sheet->setCellValue('C4', 'CÓDIGO');
+        $sheet->mergeCells('D4:D5');
+        $sheet->setCellValue('D4', 'PRUEBA DE LABORATORIO');
+
+        $sheet->mergeCells('E4:F4');
+        $sheet->setCellValue('E4', 'PARTICULAR');
+        $sheet->mergeCells('G4:H4');
+        $sheet->setCellValue('G4', 'CONSULTORIO EXTERNO');
+        $sheet->mergeCells('I4:J4');
+        $sheet->setCellValue('I4', 'EMERGENCIA');
+        $sheet->mergeCells('K4:L4');
+        $sheet->setCellValue('K4', 'HOSPITALIZACIÓN');
+        $sheet->mergeCells('M4:N4');
+        $sheet->setCellValue('M4', 'TOTAL');
+
+        // Cabecera Nivel 2 (Fila 5)
+        $subHeaders = ['Cantidad', 'S/.', 'Cantidad', 'S/.', 'Cantidad', 'S/.', 'Cantidad', 'S/.', 'Cantidad', 'S/.'];
+        $colsSub = ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'];
+        for ($s = 0; $s < count($subHeaders); $s++) {
+            $sheet->setCellValue($colsSub[$s] . '5', $subHeaders[$s]);
+        }
+
+        // Estilos para cabeceras
+        $sheet->getStyle('B4:N5')->getFont()->setName('Arial')->setSize(8)->setBold(true);
+        $sheet->getStyle('B4:N5')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getStyle('B4:N5')->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('000000');
+        $sheet->getRowDimension(4)->setRowHeight(18);
+        $sheet->getRowDimension(5)->setRowHeight(18);
+
+        // Llenado de Filas
+        $filaActual = 6;
+        foreach ($filas as $f) {
+            $esTotal = (intval($f['EsFilaTotal']) === 1);
+
+            $sheet->setCellValue('B' . $filaActual, $f['Nro']);
+            $sheet->setCellValueExplicit('C' . $filaActual, (string)$f['CodigoCPT'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValue('D' . $filaActual, $f['NombrePrueba']);
+
+            $sheet->setCellValue('E' . $filaActual, intval($f['Cant_Particular']));
+            $sheet->setCellValue('F' . $filaActual, floatval($f['Monto_Particular']));
+
+            $sheet->setCellValue('G' . $filaActual, intval($f['Cant_CE']));
+            $sheet->setCellValue('H' . $filaActual, floatval($f['Monto_CE']));
+
+            $sheet->setCellValue('I' . $filaActual, intval($f['Cant_Emergencia']));
+            $sheet->setCellValue('J' . $filaActual, floatval($f['Monto_Emergencia']));
+
+            $sheet->setCellValue('K' . $filaActual, intval($f['Cant_Hosp']));
+            $sheet->setCellValue('L' . $filaActual, floatval($f['Monto_Hosp']));
+
+            $sheet->setCellValue('M' . $filaActual, intval($f['Cant_Total']));
+            $sheet->setCellValue('N' . $filaActual, floatval($f['Monto_Total']));
+
+            // Formatos de celdas
+            $sheet->getStyle('B' . $filaActual)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('C' . $filaActual)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('E' . $filaActual)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('G' . $filaActual)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('I' . $filaActual)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('K' . $filaActual)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('M' . $filaActual)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+            $sheet->getStyle('F' . $filaActual)->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle('H' . $filaActual)->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle('J' . $filaActual)->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle('L' . $filaActual)->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle('N' . $filaActual)->getNumberFormat()->setFormatCode('#,##0.00');
+
+            $sheet->getStyle("B$filaActual:N$filaActual")->getFont()->setName('Arial')->setSize(8);
+            $sheet->getStyle("B$filaActual:N$filaActual")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('D1D5DB');
+
+            if ($esTotal) {
+                $sheet->getStyle("B$filaActual:N$filaActual")->getFont()->setBold(true);
+                $sheet->getStyle("B$filaActual:N$filaActual")->getBorders()->getBottom()->setBorderStyle(Border::BORDER_DOUBLE)->getColor()->setRGB('000000');
+                $sheet->getStyle("B$filaActual:N$filaActual")->getBorders()->getTop()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('000000');
+            }
+
+            $sheet->getRowDimension($filaActual)->setRowHeight(16);
+            $filaActual++;
+        }
+
+        // Anchos de Columna
+        $sheet->getColumnDimension('B')->setWidth(5);
+        $sheet->getColumnDimension('C')->setWidth(12);
+        $sheet->getColumnDimension('D')->setWidth(55);
+        $sheet->getColumnDimension('E')->setWidth(10);
+        $sheet->getColumnDimension('F')->setWidth(12);
+        $sheet->getColumnDimension('G')->setWidth(10);
+        $sheet->getColumnDimension('H')->setWidth(12);
+        $sheet->getColumnDimension('I')->setWidth(10);
+        $sheet->getColumnDimension('J')->setWidth(12);
+        $sheet->getColumnDimension('K')->setWidth(10);
+        $sheet->getColumnDimension('L')->setWidth(12);
+        $sheet->getColumnDimension('M')->setWidth(11);
+        $sheet->getColumnDimension('N')->setWidth(13);
+
+        $nombreArchivo = "Consolidado_Gastos_Servicios_" . date('Ymd_His') . ".xlsx";
+
+        $writer = new Xlsx($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+        $excelContenido = ob_get_clean();
+
+        $response->getBody()->write($excelContenido);
+        return $response
+            ->withHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->withHeader('Content-Disposition', 'attachment; filename="' . $nombreArchivo . '"')
+            ->withHeader('Cache-Control', 'max-age=0')
+            ->withStatus(200);
+    }
+
+    // =========================================================================
+    // 5. REPORTE: RESULTADOS HISTÓRICOS INTEGRADOS (WEB + SIS-GALENPLUS)
+    // =========================================================================
+    public function reporteResultadosSisgalen(Request $request, Response $response) {
+        $conn = $this->container->get('db');
+        $params = $request->getQueryParams();
+        list($fechaInicio, $fechaFin) = $this->formatearRangoFechasHoras($params);
+
+        $sql = "SET DATEFORMAT ymd;
+                SELECT 
+                    lm.IdMovimiento,
+                    lml.IdOrden,
+                    (CONVERT(VARCHAR(10), lm.Fecha, 103) + ' ' + CONVERT(VARCHAR(5), lm.Fecha, 108)) AS FechaHora,
+                    CAST(ISNULL(lml.IdCuentaAtencion, 0) AS VARCHAR(50)) AS Cuenta,
+                    ISNULL(lml.Paciente, 'PACIENTE SIGH') AS Paciente,
+                    ISNULL(lml.NroCama, '---') AS Cama,
+                    UPPER(ISNULL(s.Nombre, 'CONSULTA EXTERNA')) AS Procedencia,
+                    fcs.Codigo AS CodigoCPT,
+                    fcs.Nombre AS ExamenCPT,
+                    CASE 
+                        WHEN lrd.NombrePrueba IS NOT NULL 
+                            THEN lrd.NombrePrueba COLLATE DATABASE_DEFAULT
+                        ELSE fcs.Nombre COLLATE DATABASE_DEFAULT
+                    END AS Analito,
+                    CASE 
+                        WHEN lrd.ValorResultado IS NOT NULL AND RTRIM(LTRIM(lrd.ValorResultado)) <> '' 
+                            THEN RTRIM(LTRIM(lrd.ValorResultado)) COLLATE DATABASE_DEFAULT
+                        WHEN r_item.ValorResultado IS NOT NULL AND RTRIM(LTRIM(r_item.ValorResultado)) <> ''
+                            THEN RTRIM(LTRIM(r_item.ValorResultado)) COLLATE DATABASE_DEFAULT
+                        WHEN r_item.ValorTexto IS NOT NULL AND RTRIM(LTRIM(r_item.ValorTexto)) <> ''
+                            THEN RTRIM(LTRIM(r_item.ValorTexto)) COLLATE DATABASE_DEFAULT
+                        WHEN lr.resultadoAnalisis IS NOT NULL 
+                            THEN LTRIM(RTRIM(
+                                    REPLACE(
+                                        REPLACE(
+                                            REPLACE(CAST(lr.resultadoAnalisis AS VARCHAR(500)), '\\\\', ' '),
+                                            '//', ' '
+                                        ), 
+                                    '\\', ' ')
+                                 )) COLLATE DATABASE_DEFAULT
+                        ELSE 'PENDIENTE' COLLATE DATABASE_DEFAULT
+                    END AS Resultado,
+                    COALESCE(
+                        lrd.ValorReferencial COLLATE DATABASE_DEFAULT, 
+                        r_item.ValorReferencial COLLATE DATABASE_DEFAULT, 
+                        'N/A' COLLATE DATABASE_DEFAULT
+                    ) AS ValorReferencial,
+                    CASE 
+                        WHEN lrd.Observaciones IS NOT NULL AND RTRIM(LTRIM(lrd.Observaciones)) <> ''
+                            THEN RTRIM(LTRIM(lrd.Observaciones)) COLLATE DATABASE_DEFAULT
+                        WHEN r_item.ObservacionesClinicas IS NOT NULL AND RTRIM(LTRIM(CAST(r_item.ObservacionesClinicas AS VARCHAR(500)))) <> ''
+                            THEN RTRIM(LTRIM(CAST(r_item.ObservacionesClinicas AS VARCHAR(500)))) COLLATE DATABASE_DEFAULT
+                        WHEN lr.observacionResultado IS NOT NULL AND RTRIM(LTRIM(CAST(lr.observacionResultado AS VARCHAR(500)))) <> ''
+                            THEN RTRIM(LTRIM(CAST(lr.observacionResultado AS VARCHAR(500)))) COLLATE DATABASE_DEFAULT
+                        ELSE '---' COLLATE DATABASE_DEFAULT
+                    END AS Observaciones,
+                    CASE 
+                        WHEN lrd.ValorResultado IS NOT NULL THEN 'WEB (VALIDADO)'
+                        WHEN r_item.ValorResultado IS NOT NULL OR r_item.ValorTexto IS NOT NULL THEN 'SISGALEN (ITEMS/HEMOGRAMA)'
+                        WHEN lr.resultadoAnalisis IS NOT NULL THEN 'SISGALEN (GENERAL)'
+                        ELSE 'PENDIENTE'
+                    END AS OrigenDato
+                FROM dbo.LabMovimiento AS lm WITH (NOLOCK)
+                INNER JOIN dbo.LabMovimientoLaboratorio AS lml WITH (NOLOCK) 
+                    ON lm.IdMovimiento = lml.IdMovimiento
+                INNER JOIN dbo.LabMovimientoCPT AS cpt WITH (NOLOCK) 
+                    ON lm.IdMovimiento = cpt.idMovimiento
+                INNER JOIN dbo.FactCatalogoServicios AS fcs WITH (NOLOCK) 
+                    ON cpt.idProductoCPT = fcs.IdProducto
+                LEFT JOIN dbo.Atenciones AS a WITH (NOLOCK) 
+                    ON lml.IdCuentaAtencion = a.IdCuentaAtencion
+                LEFT JOIN dbo.FactOrdenServicio AS fos WITH (NOLOCK) 
+                    ON lml.IdOrden = fos.IdOrden
+                LEFT JOIN dbo.Servicios AS s WITH (NOLOCK) 
+                    ON s.IdServicio = COALESCE(fos.IdServicioPaciente, a.IdServicioIngreso)
+                LEFT JOIN dbo.LabResultadoDetalle AS lrd WITH (NOLOCK) 
+                    ON lm.IdMovimiento = lrd.IdMovimiento 
+                   AND cpt.idProductoCPT = lrd.IdProductoCPT
+                LEFT JOIN dbo.LabResultadoPorItems AS r_item WITH (NOLOCK) 
+                    ON lml.IdOrden = r_item.idOrden 
+                   AND cpt.idProductoCPT = r_item.idProductoCpt
+                LEFT JOIN dbo.LabResultado AS lr WITH (NOLOCK) 
+                    ON lml.IdOrden = lr.idOrden 
+                   AND lr.idAnalisis COLLATE DATABASE_DEFAULT = fcs.Codigo COLLATE DATABASE_DEFAULT
+                WHERE lm.Fecha >= CONVERT(DATETIME, '$fechaInicio', 120) 
+                  AND lm.Fecha <= CONVERT(DATETIME, '$fechaFin', 120)
+                  AND lm.IdPuntoCarga = 2
+                  AND ISNULL(lm.IdLabEstado, 0) != 9
+                ORDER BY lm.Fecha DESC, lml.IdOrden DESC";
+
+        $stmt = sqlsrv_query($conn, $sql);
+        if ($stmt === false) {
+            $err = sqlsrv_errors();
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => $err[0]['message'] ?? 'Error SQL']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+
+        $filas = [];
+        while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+            $filas[] = $row;
+        }
+
+        $columnas = [
+            'IdMovimiento'     => 'N° Mov',
+            'IdOrden'          => 'N° Orden',
+            'FechaHora'        => 'Fecha / Hora',
+            'Cuenta'           => 'Cuenta',
+            'Paciente'         => 'Paciente',
+            'Cama'             => 'Cama',
+            'Procedencia'      => 'Servicio Procedencia',
+            'CodigoCPT'        => 'Código CPT',
+            'ExamenCPT'        => 'Procedimiento General',
+            'Analito'          => 'Analito / Subprueba',
+            'Resultado'        => 'Resultado Obtenido',
+            'ValorReferencial' => 'Valores de Referencia',
+            'Observaciones'    => 'Observaciones',
+            'OrigenDato'       => 'Origen del Dato'
+        ];
+
+        return $this->generarXlsxPlano(
+            $response,
+            "Resultados_SisGalen_Historico_" . date('Ymd_His') . ".xlsx",
+            "REPORTE HISTÓRICO DE RESULTADOS (WEB Y SIS-GALENPLUS)",
+            "Filtros: $fechaInicio al $fechaFin",
+            $columnas,
+            $filas
+        );
+    }
+
 }

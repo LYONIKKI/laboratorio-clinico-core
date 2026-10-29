@@ -34,6 +34,10 @@ async function ejecutarGeneracionReporte(e) {
         endpoint = '/laboratorio/public/api/reportes/procedimientos';
     } else if (tipo === 'con_resultados') {
         endpoint = '/laboratorio/public/api/reportes/con-resultados';
+    } else if (tipo === 'consolidado_gastos') {
+        endpoint = '/laboratorio/public/api/reportes/consolidado-gastos';
+    } else if (tipo === 'resultados_sisgalen') {
+        endpoint = '/laboratorio/public/api/reportes/resultados-sisgalen';
     }
 
     const queryParams = new URLSearchParams({
@@ -45,10 +49,8 @@ async function ejecutarGeneracionReporte(e) {
 
     const url = `${endpoint}?${queryParams.toString()}`;
 
-    // 1. Cerrar el modal de filtros
     cerrarModalReportes();
 
-    // 2. Manejador para evitar cierre o actualización accidental de la pestaña
     const advertirSalida = (event) => {
         event.preventDefault();
         event.returnValue = 'Se está generando el reporte de laboratorio. Si sales o actualizas la página, la descarga se cancelará.';
@@ -56,7 +58,6 @@ async function ejecutarGeneracionReporte(e) {
     };
     window.addEventListener('beforeunload', advertirSalida);
 
-    // 3. Mostrar indicador de carga bloqueante
     Swal.fire({
         title: 'Generando Reporte Oficial',
         html: `
@@ -77,7 +78,6 @@ async function ejecutarGeneracionReporte(e) {
     try {
         const response = await fetch(url);
 
-        // Si el backend arrojó error (500/400), capturar el mensaje real de PHP/SQL
         if (!response.ok) {
             const errorTxt = await response.text();
             let msg = 'Error interno en la generación del reporte.';
@@ -94,7 +94,6 @@ async function ejecutarGeneracionReporte(e) {
             throw new Error(msg);
         }
 
-        // Extraer nombre del archivo enviado por el backend
         let filename = "Reporte_Productividad.xlsx";
         const disposition = response.headers.get('Content-Disposition');
         if (disposition && disposition.indexOf('filename=') !== -1) {
@@ -104,7 +103,6 @@ async function ejecutarGeneracionReporte(e) {
             }
         }
 
-        // Generar descarga del archivo binario
         const blob = await response.blob();
         const downloadUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -130,7 +128,6 @@ async function ejecutarGeneracionReporte(e) {
             text: err.message
         });
     } finally {
-        // 4. Remover siempre el listener al culminar o fallar la petición
         window.removeEventListener('beforeunload', advertirSalida);
     }
 }

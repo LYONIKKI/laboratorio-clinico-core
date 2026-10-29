@@ -79,6 +79,24 @@
                             <span class="modal-radio-desc">Prueba, resultado digitado, referencial y profesional que validó</span>
                         </div>
                     </label>
+
+                    <!-- NUEVA OPCIÓN 4 -->
+                    <label class="modal-radio-item">
+                        <input type="radio" name="tipoReporte" value="consolidado_gastos">
+                        <div>
+                            <div class="modal-radio-title">4. Consolidado de Gastos por Servicios (Matriz CPT)</div>
+                            <span class="modal-radio-desc">Matriz de cantidades e importes: Particular, C. Externo, Emergencia y Hosp.</span>
+                        </div>
+                    </label>
+
+                    <!-- NUEVA OPCIÓN 5 -->
+                    <label class="modal-radio-item">
+                        <input type="radio" name="tipoReporte" value="resultados_sisgalen">
+                        <div>
+                            <div class="modal-radio-title">5. Reporte de Resultados Integrado (Web y SIS-GalenPlus)</div>
+                            <span class="modal-radio-desc">Histórico con analitos, ítems de hemograma y grupo sanguíneo SIGH</span>
+                        </div>
+                    </label>
                 </div>
             </div>
         </form>

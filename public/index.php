@@ -133,5 +133,7 @@ $app->post('/api/usuarios/eliminar', 'UsuarioController:eliminarUsuario')->add($
 $app->get('/api/reportes/pacientes', 'ReportesController:reportePacientes')->add($acl($rolesLab));
 $app->get('/api/reportes/con-resultados', 'ReportesController:reporteConResultados')->add($acl($rolesLab));
 $app->get('/api/reportes/procedimientos', 'ReportesController:reporteProcedimientosCPT')->add($acl($rolesLab));
+$app->get('/api/reportes/consolidado-gastos', [ReportesController::class, 'reporteConsolidadoGastos']);
+$app->get('/api/reportes/resultados-sisgalen', [ReportesController::class, 'reporteResultadosSisgalen']);
 
 $app->run();
