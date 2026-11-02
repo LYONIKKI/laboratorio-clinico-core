@@ -12,22 +12,26 @@ class NuevaOrdenController {
     }
 
     // 1. Buscar paciente únicamente por número de cuenta (Blindado)
+    // 1. Buscar paciente por Número de Cuenta O por DNI (Obtiene la última atención)
     public function buscarPorCuenta(Request $request, Response $response) {
         $conn = $this->container->get('db');
         $params = $request->getQueryParams();
-        $cuentaRaw = trim($params['cuenta'] ?? '');
+        
+        // Permite recibir el valor como ?cuenta=, ?dni= o ?termino=
+        $terminoRaw = trim($params['cuenta'] ?? $params['dni'] ?? $params['termino'] ?? '');
 
-        if (!is_numeric($cuentaRaw) || intval($cuentaRaw) <= 0) {
+        if (empty($terminoRaw)) {
             $response->getBody()->write(json_encode([
                 'status'  => 'error', 
-                'message' => 'Ingrese un número de cuenta numérico válido.'
+                'message' => 'Ingrese un número de Cuenta de Atención o DNI válido.'
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
         }
 
-        $idCuentaAtencion = intval($cuentaRaw);
+        // Si es numérico pasamos el entero para la cuenta, de lo contrario 0
+        $idCuentaPosible = is_numeric($terminoRaw) ? intval($terminoRaw) : 0;
+        $dniBuscado = $terminoRaw;
 
-        // Consulta exacta probada y validada en SSMS
         $sql = "SELECT TOP 1
                     a.IdCuentaAtencion,
                     a.IdAtencion,
@@ -54,9 +58,10 @@ class NuevaOrdenController {
                 LEFT JOIN dbo.LabMovimientoLaboratorio lm ON a.IdCuentaAtencion = lm.IdCuentaAtencion
                 LEFT JOIN dbo.Medicos m ON a.IdMedicoIngreso = m.IdMedico
                 LEFT JOIN dbo.Empleados e ON m.IdEmpleado = e.IdEmpleado
-                WHERE a.IdCuentaAtencion = ?";
+                WHERE a.IdCuentaAtencion = ? OR RTRIM(LTRIM(p.NroDocumento)) = ?
+                ORDER BY a.IdCuentaAtencion DESC";
 
-        $stmt = sqlsrv_query($conn, $sql, [$idCuentaAtencion]);
+        $stmt = sqlsrv_query($conn, $sql, [$idCuentaPosible, $dniBuscado]);
 
         if ($stmt === false) {
             $errors = sqlsrv_errors();
@@ -73,7 +78,7 @@ class NuevaOrdenController {
         if (!$row) {
             $response->getBody()->write(json_encode([
                 'status'  => 'error', 
-                'message' => "No se encontró ninguna atención médica para la cuenta #{$idCuentaAtencion}."
+                'message' => "No se encontró ninguna atención médica asociada a la cuenta o DNI '{$terminoRaw}'."
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
         }

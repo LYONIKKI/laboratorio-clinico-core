@@ -6,6 +6,8 @@ let timerBuscadorCpt = null;
 let timerDiagNuevo = null;
 let timerMedNuevo = null;
 let timerServNuevo = null;
+let indiceCptSeleccionado = -1;
+let itemsCptActuales = [];
 
 document.addEventListener("DOMContentLoaded", () => {
     activarAutocompletadosNuevaOrden();
@@ -71,30 +73,36 @@ async function buscarCuentaNuevaSolicitud() {
 
 // 3. AUTOCOMPLETADOS CLÍNICOS REACTIVOS
 function activarAutocompletadosNuevaOrden() {
-    // A. Búsqueda de Exámenes CPT (apuntando a ClinicaController)
     const inputCpt = document.getElementById('inputBuscarExamenCpt');
     const boxCpt = document.getElementById('sugerenciasExamenesCpt');
 
     if (inputCpt && boxCpt) {
+        // A.1 Input reactivo al escribir
         inputCpt.addEventListener('input', (e) => {
             clearTimeout(timerBuscadorCpt);
             const term = e.target.value.trim();
-            if (term.length < 2) { boxCpt.classList.add('hidden'); return; }
+            indiceCptSeleccionado = -1;
+            itemsCptActuales = [];
+
+            if (term.length < 2) { 
+                boxCpt.classList.add('hidden'); 
+                return; 
+            }
 
             timerBuscadorCpt = setTimeout(async () => {
                 try {
                     const res = await fetch(`/laboratorio/public/api/clinica/buscar-cpt?term=${encodeURIComponent(term)}`);
                     const json = await res.json();
-                    const lista = json.data || [];
+                    itemsCptActuales = json.data || [];
 
-                    if (lista.length === 0) {
+                    if (itemsCptActuales.length === 0) {
                         boxCpt.innerHTML = `<div class="p-2 text-gray-400 text-center font-mono text-xs">No se encontraron exámenes en catálogo.</div>`;
                     } else {
-                        // Construcción limpia sin onclick en string que rompa comillas
                         boxCpt.innerHTML = '';
-                        lista.forEach(item => {
+                        itemsCptActuales.forEach((item, index) => {
                             const div = document.createElement('div');
-                            div.className = "p-2 hover:bg-green-50 cursor-pointer border-b border-gray-100 flex justify-between items-center";
+                            div.className = "item-cpt-sugerencia p-2 hover:bg-green-50 cursor-pointer border-b border-gray-100 flex justify-between items-center transition";
+                            div.setAttribute('data-index', index);
                             div.innerHTML = `
                                 <div>
                                     <span class="font-bold text-gray-800 text-xs block">${item.nombre}</span>
@@ -103,7 +111,6 @@ function activarAutocompletadosNuevaOrden() {
                                     CPT #${item.codigo || item.idProducto}
                                 </span>
                             `;
-                            // Asignación directa por referencia (Inmune a comillas simples, dobles o caracteres especiales)
                             div.addEventListener('click', () => {
                                 agregarExamenCanasta(item.idProducto, item.nombre);
                             });
@@ -115,6 +122,39 @@ function activarAutocompletadosNuevaOrden() {
                     console.error("Error al buscar CPT:", err);
                 }
             }, 200);
+        });
+
+        // A.2 Navegación con teclado (Flechas Arriba/Abajo y Enter)
+        inputCpt.addEventListener('keydown', (e) => {
+            const divs = boxCpt.querySelectorAll('.item-cpt-sugerencia');
+            if (divs.length === 0 || boxCpt.classList.contains('hidden')) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                indiceCptSeleccionado++;
+                if (indiceCptSeleccionado >= divs.length) indiceCptSeleccionado = 0;
+                resaltarElementoCpt(divs);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                indiceCptSeleccionado--;
+                if (indiceCptSeleccionado < 0) indiceCptSeleccionado = divs.length - 1;
+                resaltarElementoCpt(divs);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (indiceCptSeleccionado >= 0 && indiceCptSeleccionado < itemsCptActuales.length) {
+                    const item = itemsCptActuales[indiceCptSeleccionado];
+                    agregarExamenCanasta(item.idProducto, item.nombre);
+                    indiceCptSeleccionado = -1;
+                } else if (divs.length === 1) {
+                    // Si solo hay un resultado filtrado y presiona Enter directo
+                    const item = itemsCptActuales[0];
+                    agregarExamenCanasta(item.idProducto, item.nombre);
+                    indiceCptSeleccionado = -1;
+                }
+            } else if (e.key === 'Escape') {
+                boxCpt.classList.add('hidden');
+                indiceCptSeleccionado = -1;
+            }
         });
     }
 
@@ -215,6 +255,18 @@ function activarAutocompletadosNuevaOrden() {
         if (!e.target.closest('#nuevoDiagnosticoInput') && !e.target.closest('#sugerenciasDiagNuevo')) boxDiag?.classList.add('hidden');
         if (!e.target.closest('#nuevoMedicoInput') && !e.target.closest('#sugerenciasMedNuevo')) boxMed?.classList.add('hidden');
         if (!e.target.closest('#nuevoServicioInput') && !e.target.closest('#sugerenciasServNuevo')) boxServ?.classList.add('hidden');
+    });
+}
+
+// Función auxiliar para iluminar visualmente y mover el scroll
+function resaltarElementoCpt(divs) {
+    divs.forEach((div, idx) => {
+        if (idx === indiceCptSeleccionado) {
+            div.classList.add('bg-green-100', 'border-l-4', 'border-green-600');
+            div.scrollIntoView({ block: 'nearest' });
+        } else {
+            div.classList.remove('bg-green-100', 'border-l-4', 'border-green-600');
+        }
     });
 }
 
