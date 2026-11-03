@@ -289,27 +289,28 @@ class SolicitudesController {
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
 
-    // API: Obtener componentes de la plantilla según el examen (Blindado total)
     public function obtenerPlantillaExamen(Request $request, Response $response) {
-        $conn = $this->container->get('db');
-        $params = $request->getQueryParams();
+        $conn = $this->container->get('db');  
+        $params = $request->getQueryParams();  
         
-        $idMovimiento = isset($params['idMovimiento']) ? intval($params['idMovimiento']) : 0;
-        $examenParam  = isset($params['examen']) ? trim($params['examen']) : '';
+        $idMovimiento = isset($params['idMovimiento']) ? intval($params['idMovimiento']) : 0;  
+        $idCpt        = isset($params['idCpt']) ? intval($params['idCpt']) : 0;
+        $examenParam  = isset($params['examen']) ? trim($params['examen']) : '';  
 
-        if ($idMovimiento <= 0) {
-            $response->getBody()->write(json_encode(['error' => 'Falta el ID de movimiento']));
-            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        if ($idMovimiento <= 0) {  
+            $response->getBody()->write(json_encode(['error' => 'Falta el ID de movimiento']));  
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);  
         }
 
-        $examenLimpio = str_ireplace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $examenParam);
-        
+        // Si viene idCpt filtra exacto por el número (3278), si no por texto
         $clausulaFiltro = "";
-        $queryParams = [$idMovimiento];
+        $queryParams = [$idMovimiento];  
 
-        if ($examenLimpio !== '') {
-            $clausulaFiltro = " AND (Cat.Nombre LIKE ? OR Cat.Nombre LIKE ?) ";
-            $queryParams[] = '%' . $examenLimpio . '%';
+        if ($idCpt > 0) {
+            $clausulaFiltro = " AND LCPT.idProductoCPT = ? ";
+            $queryParams[] = $idCpt;
+        } elseif ($examenParam !== '') {  
+            $clausulaFiltro = " AND Cat.Nombre COLLATE Modern_Spanish_CI_AI LIKE ? ";
             $queryParams[] = '%' . $examenParam . '%';
         }
 
@@ -318,74 +319,83 @@ class SolicitudesController {
                     LML.IdCuentaAtencion,
                     LCPT.idProductoCPT,
                     Cat.Nombre AS Examen_Principal,
-                    ISNULL(LRD.NombrePrueba, Cat.Nombre) AS SubPrueba,
+
+                    COALESCE(
+                        LRD.NombrePrueba COLLATE DATABASE_DEFAULT, 
+                        PR.NombreAnalito COLLATE DATABASE_DEFAULT, 
+                        Cat.Nombre COLLATE DATABASE_DEFAULT
+                    ) AS SubPrueba,
+
                     CASE 
                         WHEN LRD.ValorReferencial IS NOT NULL AND LRD.ValorReferencial <> 'N/A' AND RTRIM(LRD.ValorReferencial) <> '' 
-                        THEN LRD.ValorReferencial
-                        ELSE ISNULL(PR.ValorReferencial, 'Menor a 6.0 mg/L (Negativo)')
+                            THEN LRD.ValorReferencial COLLATE DATABASE_DEFAULT
+                        ELSE ISNULL(PR.ValorReferencial, 'N/A') COLLATE DATABASE_DEFAULT
                     END AS ValorReferencial,
+
                     ISNULL(PR.Metodo, 'Automatizado') AS Metodo,
                     ISNULL(PR.TipoControl, 'INPUT') AS TipoControl,
                     ISNULL(PR.OpcionesSelect, '') AS OpcionesSelect,
                     LRD.ValorResultado AS Resultado_Actual,
                     LRD.Observaciones AS ObservacionesClinicas
-                FROM dbo.LabMovimiento L
-                INNER JOIN dbo.LabMovimientoLaboratorio LML ON L.IdMovimiento = LML.IdMovimiento
-                INNER JOIN dbo.LabMovimientoCPT LCPT ON L.IdMovimiento = LCPT.idMovimiento
-                INNER JOIN dbo.FactCatalogoServicios Cat ON LCPT.idProductoCPT = Cat.IdProducto
-                LEFT JOIN dbo.LabResultadoDetalle LRD
+
+                FROM dbo.LabMovimiento L WITH (NOLOCK)
+                INNER JOIN dbo.LabMovimientoLaboratorio LML WITH (NOLOCK) 
+                    ON L.IdMovimiento = LML.IdMovimiento
+                INNER JOIN dbo.LabMovimientoCPT LCPT WITH (NOLOCK) 
+                    ON L.IdMovimiento = LCPT.idMovimiento
+                INNER JOIN dbo.FactCatalogoServicios Cat WITH (NOLOCK) 
+                    ON LCPT.idProductoCPT = Cat.IdProducto
+
+                LEFT JOIN dbo.LabPlantillaReferenciales PR WITH (NOLOCK)
+                    ON Cat.Nombre COLLATE Modern_Spanish_CI_AI LIKE '%' + PR.ExamenPatron COLLATE Modern_Spanish_CI_AI + '%'
+                   AND PR.Estado = 1
+
+                LEFT JOIN dbo.LabResultadoDetalle LRD WITH (NOLOCK)
                     ON LRD.IdMovimiento = L.IdMovimiento
                    AND LRD.IdProductoCPT = LCPT.idProductoCPT
-                LEFT JOIN dbo.LabPlantillaReferenciales PR
-                    ON (
-                        PR.NombreAnalito COLLATE Modern_Spanish_CI_AI = ISNULL(LRD.NombrePrueba, Cat.Nombre) COLLATE Modern_Spanish_CI_AI
-                        OR Cat.Nombre COLLATE Modern_Spanish_CI_AI LIKE '%' + PR.ExamenPatron COLLATE Modern_Spanish_CI_AI + '%'
-                        OR (PR.ExamenPatron = 'PCR' AND (Cat.Nombre LIKE '%PROTEINA C%' OR Cat.Nombre LIKE '%PCR%'))
-                    )
-                   AND PR.Estado = 1
+                   AND LRD.NombrePrueba COLLATE DATABASE_DEFAULT = COALESCE(PR.NombreAnalito COLLATE DATABASE_DEFAULT, Cat.Nombre COLLATE DATABASE_DEFAULT)
+
                 WHERE L.IdMovimiento = ? 
                   $clausulaFiltro";
 
-        $stmt = sqlsrv_query($conn, $sql, $queryParams);
+        $stmt = sqlsrv_query($conn, $sql, $queryParams);  
 
-        if ($stmt === false) {
-            $errors = sqlsrv_errors();
-            $errorDetalle = $errors ? ($errors[0]['message'] ?? 'Error SQL') : 'Falla desconocida';
-            $response->getBody()->write(json_encode([
-                'error' => 'Falla en consulta SQL Server',
-                'detalles' => $errorDetalle
-            ]));
-            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        if ($stmt === false) {  
+            $errors = sqlsrv_errors();  
+            $response->getBody()->write(json_encode([  
+                'error' => 'Falla en consulta SQL Server',  
+                'detalles' => $errors[0]['message'] ?? 'Error SQL'  
+            ]));  
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);  
         }
 
-        $plantilla = [];
-        $vistos = [];
-        while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-            $subPrueba = $row['SubPrueba'] ? trim($row['SubPrueba']) : 'Examen General';
-            // Deduplicación en memoria por nombre de subprueba
-            $claveUnica = strtoupper($subPrueba);
-            if (isset($vistos[$claveUnica])) {
-                continue;
+        $plantilla = [];  
+        $vistos = [];  
+        while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {  
+            $subPrueba = $row['SubPrueba'] ? trim($row['SubPrueba']) : 'Examen General';  
+            $claveUnica = strtoupper($subPrueba);  
+            if (isset($vistos[$claveUnica])) {  
+                continue;  
             }
-            $vistos[$claveUnica] = true;
+            $vistos[$claveUnica] = true;  
 
-            $plantilla[] = [
-                'idOrden'          => $row['idOrden'],
-                'IdCuentaAtencion' => intval($row['IdCuentaAtencion']),
-                'idProductoCPT'    => $row['idProductoCPT'],
-                'Examen_Principal' => $row['Examen_Principal'] ? trim($row['Examen_Principal']) : 'EXAMEN',
-                'SubPrueba'        => $subPrueba,
-                'ValorReferencial' => $row['ValorReferencial'] ? trim($row['ValorReferencial']) : 'N/A',
-                'Metodo'           => $row['Metodo'] ? trim($row['Metodo']) : 'Automatizado',
-                'TipoControl'      => $row['TipoControl'] ? trim($row['TipoControl']) : 'INPUT',
-                'OpcionesSelect'   => $row['OpcionesSelect'] ? trim($row['OpcionesSelect']) : '',
-                'Resultado_Actual' => $row['Resultado_Actual'] !== null ? trim($row['Resultado_Actual']) : '',
-                'Observaciones'    => $row['ObservacionesClinicas'] ? trim($row['ObservacionesClinicas']) : ''
-            ];
+            $plantilla[] = [  
+                'idOrden'          => $row['idOrden'],  
+                'IdCuentaAtencion' => intval($row['IdCuentaAtencion']),  
+                'idProductoCPT'    => $row['idProductoCPT'],  
+                'Examen_Principal' => $row['Examen_Principal'] ? trim($row['Examen_Principal']) : 'EXAMEN',  
+                'SubPrueba'        => $subPrueba,  
+                'ValorReferencial' => $row['ValorReferencial'] ? trim($row['ValorReferencial']) : 'N/A',  
+                'Metodo'           => $row['Metodo'] ? trim($row['Metodo']) : 'Automatizado',  
+                'TipoControl'      => $row['TipoControl'] ? trim($row['TipoControl']) : 'INPUT',  
+                'OpcionesSelect'   => $row['OpcionesSelect'] ? trim($row['OpcionesSelect']) : '',  
+                'Resultado_Actual' => $row['Resultado_Actual'] !== null ? trim($row['Resultado_Actual']) : '',  
+                'Observaciones'    => $row['ObservacionesClinicas'] ? trim($row['ObservacionesClinicas']) : ''  
+            ];  
         }
 
-        $response->getBody()->write(json_encode($plantilla));
-        return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
+        $response->getBody()->write(json_encode($plantilla));  
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(200);  
     }
        
 }

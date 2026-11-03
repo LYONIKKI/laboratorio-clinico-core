@@ -11,6 +11,9 @@ const ModuloHematologia = {
         return boton.includes('HEMATOCRITO') ||
                boton.includes('HEMOGLOBINA') ||
                boton.includes('SANGRIA') ||
+               boton.includes('SANGRÍA') ||
+               boton.includes('TERAPEUTICA') ||
+               boton.includes('TERAPÉUTICA') ||
                boton.includes('PROTROMBINA') ||
                boton.includes('LAMINA PERIFERICA') ||
                boton.includes('SEDIMENTACION') ||
@@ -123,8 +126,57 @@ const ModuloHematologia = {
                 </div>`;
         }
 
-        // C. TIEMPO DE SANGRÍA (UNA SOLA FILA LIMPIA, EVITA DUPLICADOS)
-        if (boton.includes('SANGRIA') && !examen.includes('COAGULACION')) {
+        // ---------------------------------------------------------------------
+        // C. SANGRÍA TERAPÉUTICA (FLEBOTOMÍA POR POLICITEMIA)
+        // Se evalúa PRIMERO para que no caiga en Tiempo de Sangría de Duke
+        // ---------------------------------------------------------------------
+        if (boton.includes('TERAPEUTICA') || boton.includes('TERAPÉUTICA') || examen.includes('TERAPEUTICA') || examen.includes('TERAPÉUTICA')) {
+            const item = data[0];
+            const resultadoActual = (item.Resultado_Actual || '').trim();
+
+            return `
+                <div class="border border-gray-200 rounded-lg overflow-hidden font-mono text-xs">
+                    <div class="bg-red-50 text-red-900 font-bold px-4 py-2 border-b border-red-200 flex items-center justify-between">
+                        <span><i class="fa-solid fa-droplet text-red-600 mr-2"></i> PROCEDIMIENTO: SANGRÍA TERAPÉUTICA</span>
+                        <span class="text-xs bg-red-200 text-red-900 px-2 py-0.5 rounded font-bold">Flebotomía</span>
+                    </div>
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-50 text-gray-600 border-b border-gray-200 text-xs">
+                            <tr>
+                                <th class="p-2.5">Detalle del Procedimiento</th>
+                                <th class="p-2.5 text-center w-64">Volumen Extraído / Observación</th>
+                                <th class="p-2.5 text-center">Referencial</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="p-3 font-bold text-gray-700">VOLUMEN DE EXTRACCIÓN</td>
+                                <td class="p-2 w-64 text-center">
+                                    <input type="text" class="w-full bg-blue-50 border border-gray-300 rounded px-2.5 py-1.5 text-center font-bold text-blue-700 input-resultado text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                                           value="${resultadoActual}"
+                                           data-movimiento="${idMovimiento}"
+                                           data-orden="${idOrden}"
+                                           data-cpt="${cptPadre}"
+                                           data-nombre="VOLUMEN EXTRAÍDO"
+                                           data-referencial="400 - 500 mL"
+                                           placeholder="Ej: 450 mL (Sin incidentes)">
+                                </td>
+                                <td class="p-3 text-center text-gray-500 text-xs">400 - 500 mL</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        // ---------------------------------------------------------------------
+        // D. TIEMPO DE SANGRÍA (MÉTODO DE DUKE - PRUEBA DE COAGULACIÓN)
+        // ---------------------------------------------------------------------
+        const esTiempoSangria = (boton.includes('SANGRIA') || boton.includes('SANGRÍA') || boton.includes('DUKE')) &&
+                                !boton.includes('TERAPEUTICA') && !boton.includes('TERAPÉUTICA') &&
+                                !examen.includes('TERAPEUTICA') && !examen.includes('TERAPÉUTICA') &&
+                                !examen.includes('COAGULACION');
+
+        if (esTiempoSangria) {
             const item = data[0];
             const resultadoActual = (item.Resultado_Actual || '').trim();
             const valRef = 'Hasta 3.5 minutos';
@@ -148,7 +200,7 @@ const ModuloHematologia = {
                             <tr>
                                 <td class="p-3 font-bold text-gray-700">Tiempo de sangría</td>
                                 <td class="p-2 w-48 text-center">
-                                    <input type="text" class="w-full bg-blue-50 border border-gray-300 rounded px-2.5 py-1.5 text-center font-bold text-blue-700 input-resultado text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    <input type="text" class="w-full bg-blue-50 border border-gray-300 rounded px-2.5 py-1.5 text-center font-bold text-blue-700 input-resultado text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
                                            value="${resultadoActual}"
                                            data-movimiento="${idMovimiento}"
                                            data-orden="${idOrden}"

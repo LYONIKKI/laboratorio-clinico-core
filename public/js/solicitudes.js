@@ -606,7 +606,7 @@ async function abrirDigitacionManual(idMovimiento, nombreExamen, idCpt) {
     modal.classList.remove('hidden');
 
     try {
-        const url = `/laboratorio/public/api/get-plantilla-examen?idMovimiento=${idMovimiento}&examen=${encodeURIComponent(nombreExamen)}`;
+        const url = `/laboratorio/public/api/get-plantilla-examen?idMovimiento=${idMovimiento}&idCpt=${idCpt || 0}&examen=${encodeURIComponent(nombreExamen)}`;
         const res = await fetch(url);
         
         if (!res.ok) throw new Error("Error HTTP " + res.status);
