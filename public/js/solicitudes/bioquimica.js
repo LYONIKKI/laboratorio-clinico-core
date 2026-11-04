@@ -1,10 +1,11 @@
 // public/js/solicitudes/bioquimica.js
 // Manejo exclusivo de Bioquímica Clínica con enrutamiento prioritario y cálculos reactivos:
-// 1. Perfil Lipídico (Friedewald)
-// 2. Perfil Hepático Completo (Evalúa antes para no confundirse con albúmina/proteínas)
+// 1. Perfil Hepático Completo
+// 2. Perfil Lipídico (Friedewald)
 // 3. Bilirrubinas (Total, Directa, Indirecta)
-// 4. Proteínas Totales y Fraccionadas (Albúmina + Globulinas = PT)
-// 5. Parámetros Generales de Bioquímica
+// 4. Proteínas Totales y Fraccionadas
+// 5. Transaminasas Duales (TGO y TGP)
+// 6. Parámetros Generales de Bioquímica
 
 const ModuloBioquimica = {
 
@@ -53,7 +54,8 @@ const ModuloBioquimica = {
                examen.includes('PROTEINA') ||
                examen.includes('PROTEÍNA') ||
                examen.includes('ALBUMINA') ||
-               examen.includes('ALBÚMINA');
+               examen.includes('ALBÚMINA') ||
+               examen.includes('TRANSAMINASA');
     },
 
     renderizar: function(data, botonPresionado, nombreExamenOriginal, idMovimiento, idOrden) {
@@ -80,7 +82,6 @@ const ModuloBioquimica = {
                 let extraNota = '';
                 let bgClase = 'bg-blue-50';
 
-                // Asignar inputs reactivos según el analito dentro del perfil hepático
                 if (aUpper.includes('ALB')) {
                     idAttr = 'id="input_hep_albumina"';
                     oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoProteinas()"';
@@ -377,7 +378,6 @@ const ModuloBioquimica = {
 
         // ---------------------------------------------------------------------
         // 4. PRIORIDAD: PROTEÍNAS TOTALES Y FRACCIONADAS
-        // Excluye explícitamente exámenes hepáticos para evitar colisiones
         // ---------------------------------------------------------------------
         const esProteinaFraccionada = (
             botonUpper.includes('PROTEINA') || examenUpper.includes('PROTEINA') ||
@@ -478,7 +478,73 @@ const ModuloBioquimica = {
         }
 
         // ---------------------------------------------------------------------
-        // 5. PARÁMETROS GENERALES DE BIOQUÍMICA (GLUCOSA, UREA, CREATININA, ETC.)
+        // 5. PRIORIDAD: TRANSAMINASAS DUALES (TGO Y TGP)
+        // ---------------------------------------------------------------------
+        const esTransaminasas = (botonUpper.includes('TRANSAMINASA') || examenUpper.includes('TRANSAMINASA') || (botonUpper.includes('GOT') && botonUpper.includes('GPT'))) &&
+                                !botonUpper.includes('HEPATIC') && !examenUpper.includes('HEPATIC') && !botonUpper.includes('HEPÁTIC') && !examenUpper.includes('HEPÁTIC');
+
+        if (esTransaminasas) {
+            let valTgo = '', valTgp = '';
+
+            data.forEach(item => {
+                const n = (item.SubPrueba || '').toUpperCase();
+                const r = (item.Resultado_Actual || '').trim();
+                if (n.includes('T.G.O') || n.includes('TGO') || n.includes('AST') || n.includes('ASPARTATO')) valTgo = r;
+                else if (n.includes('T.G.P') || n.includes('TGP') || n.includes('ALT') || n.includes('ALANINA')) valTgp = r;
+            });
+
+            return `
+                <div class="border border-gray-200 rounded-lg overflow-hidden font-mono text-xs">
+                    <div class="bg-blue-50 text-blue-900 font-bold px-4 py-2 border-b border-blue-200 flex items-center justify-between">
+                        <span class="flex items-center"><i class="fa-solid fa-flask text-blue-600 mr-2"></i> DOSAJE DE TRANSAMINASAS (TGO / TGP)</span>
+                        <span class="text-xs bg-blue-200 text-blue-900 px-2 py-0.5 rounded font-bold">Cinético UV (IFCC)</span>
+                    </div>
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-50 text-gray-600 border-b border-gray-200 text-xs">
+                            <tr>
+                                <th class="p-2.5">Enzima</th>
+                                <th class="p-2.5 text-center w-48">Resultado (U/L)</th>
+                                <th class="p-2.5 text-center">Referencial</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr class="hover:bg-gray-50">
+                                <td class="p-3 font-bold text-gray-700">TRANSAMINASA T.G.O. (AST)</td>
+                                <td class="p-2 w-48 text-center">
+                                    <input type="text"
+                                           class="w-full bg-blue-50 border border-gray-300 rounded px-2.5 py-1.5 text-center font-bold text-blue-700 input-resultado text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                                           value="${valTgo}"
+                                           data-movimiento="${idMovimiento}"
+                                           data-orden="${idOrden}"
+                                           data-cpt="${cptPadre}"
+                                           data-nombre="TRANSAMINASA T.G.O. (AST)"
+                                           data-referencial="Varones: Hasta 38 U/L | Mujeres: Hasta 32 U/L"
+                                           placeholder="0.00">
+                                </td>
+                                <td class="p-3 text-center text-gray-500 text-xs font-mono">Varones: Hasta 38 | Mujeres: Hasta 32 U/L</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50">
+                                <td class="p-3 font-bold text-gray-700">TRANSAMINASA T.G.P. (ALT)</td>
+                                <td class="p-2 w-48 text-center">
+                                    <input type="text"
+                                           class="w-full bg-blue-50 border border-gray-300 rounded px-2.5 py-1.5 text-center font-bold text-blue-700 input-resultado text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                                           value="${valTgp}"
+                                           data-movimiento="${idMovimiento}"
+                                           data-orden="${idOrden}"
+                                           data-cpt="${cptPadre}"
+                                           data-nombre="TRANSAMINASA T.G.P. (ALT)"
+                                           data-referencial="Varones: Hasta 41 U/L | Mujeres: Hasta 33 U/L"
+                                           placeholder="0.00">
+                                </td>
+                                <td class="p-3 text-center text-gray-500 text-xs font-mono">Varones: Hasta 41 | Mujeres: Hasta 33 U/L</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        // ---------------------------------------------------------------------
+        // 6. PARÁMETROS GENERALES DE BIOQUÍMICA (GLUCOSA, UREA, CREATININA, ETC.)
         // ---------------------------------------------------------------------
         const tituloLimpio = (nombreExamenOriginal || 'EXAMEN')
             .toUpperCase()
@@ -634,22 +700,6 @@ const ModuloBioquimica = {
         }
     },
 
-    calcularBilirrubinaIndirectaPorTotal: function() {
-        const inputTot = document.getElementById('input_bili_total');
-        const inputDir = document.getElementById('input_bili_directa');
-        const inputInd = document.getElementById('input_bili_indirecta');
-
-        if (!inputTot || !inputDir || !inputInd) return;
-
-        const t = parseFloat(inputTot.value);
-        const d = parseFloat(inputDir.value);
-
-        if (!isNaN(t) && !isNaN(d)) {
-            const ind = t - d;
-            inputInd.value = ind >= 0 ? ind.toFixed(2) : '0.00';
-        }
-    }, // <-- Aquí faltaba esta coma
-
     // FÓRMULAS DEL PERFIL HEPÁTICO EN TIEMPO REAL
     calcularHepaticoProteinas: function() {
         const a = parseFloat(document.getElementById('input_hep_albumina')?.value);
@@ -685,4 +735,3 @@ const ModuloBioquimica = {
         else if (isNaN(d) && !isNaN(i)) totInput.value = i.toFixed(2);
     }
 };
-    

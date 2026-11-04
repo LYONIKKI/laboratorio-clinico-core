@@ -631,6 +631,8 @@ async function abrirDigitacionManual(idMovimiento, nombreExamen, idCpt) {
             plantillaHtml = ModuloHematologia.renderizar(data, nombreExamen, nombreExamen, idMovimiento, idOrden);
         } else if (typeof ModuloOtros !== 'undefined' && ModuloOtros.esOtroExamen(nombreExamen, nombreExamen)) {
             plantillaHtml = ModuloOtros.renderizar(data, nombreExamen, nombreExamen, idMovimiento, idOrden);
+        } else if (typeof ModuloBioquimica2 !== 'undefined' && ModuloBioquimica2.esBioquimica2(nombreExamen, nombreExamen, idCpt)) {
+            plantillaHtml = ModuloBioquimica2.renderizar(data, nombreExamen, nombreExamen, idMovimiento, idOrden);
         } else if (typeof ModuloBioquimica !== 'undefined' && ModuloBioquimica.esBioquimica(nombreExamen, nombreExamen, idCpt)) {
             plantillaHtml = ModuloBioquimica.renderizar(data, nombreExamen, nombreExamen, idMovimiento, idOrden);
         } else {

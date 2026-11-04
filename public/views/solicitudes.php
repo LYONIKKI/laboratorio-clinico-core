@@ -376,6 +376,7 @@
     <!-- Módulos Clínicos Desacoplados -->
     <script src="/laboratorio/public/js/solicitudes/hematologia.js"></script>
     <script src="/laboratorio/public/js/solicitudes/bioquimica.js"></script>
+    <script src="/laboratorio/public/js/solicitudes/bioquimica2.js"></script>
     <script src="/laboratorio/public/js/solicitudes/microbiologia.js"></script>
     <script src="/laboratorio/public/js/solicitudes/otros.js"></script>
     <script src="/laboratorio/public/js/solicitudes/orina.js"></script>
