@@ -111,6 +111,7 @@
                 <input type="hidden" id="detIdCuentaAtencion">
                 <input type="hidden" id="detEdadValue">
                 <input type="hidden" id="detResponsableValue">
+                <input type="hidden" id="detCargoValue">
                 <input type="hidden" id="detSeguroValue">
                 
                 <div class="flex justify-between items-start">

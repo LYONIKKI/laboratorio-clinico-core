@@ -12,6 +12,8 @@ const ModuloHematologia = {
                boton.includes('HEMOGLOBINA') ||
                boton.includes('SANGRIA') ||
                boton.includes('SANGRÍA') ||
+               boton.includes('COAGULACION') ||
+               boton.includes('COAGULACIÓN') ||
                boton.includes('TERAPEUTICA') ||
                boton.includes('TERAPÉUTICA') ||
                boton.includes('PROTROMBINA') ||
@@ -24,7 +26,8 @@ const ModuloHematologia = {
                examen.includes('GRUPO SANGUINEO') ||
                examen.includes('PLAQUETA') ||
                examen.includes('HEMOGRAMA') ||
-               examen.includes('COAGULACION');
+               examen.includes('COAGULACION') ||
+               examen.includes('COAGULACIÓN');
     },
 
     // 2. CONSTRUCTOR PRINCIPAL DE PLANTILLA
@@ -39,6 +42,122 @@ const ModuloHematologia = {
             const k = (r.SubPrueba || '').toUpperCase().trim();
             if (k) mapaGuardados[k] = (r.Resultado_Actual || '').trim();
         });
+
+        // ---------------------------------------------------------------------
+        // 0. PERFIL DE COAGULACIÓN (CON ENTRADA DUAL: [ MIN ] MIN [ SEG ] SEG)
+        // ---------------------------------------------------------------------
+        if (boton.includes('COAGULACION') || boton.includes('COAGULACIÓN') || examen.includes('COAGULACION') || examen.includes('COAGULACIÓN')) {
+            let filasCoag = '';
+
+            data.forEach((item, idx) => {
+                const analito = item.SubPrueba || item.Examen_Principal || 'ANALITO';
+                const aUpper = analito.toUpperCase();
+                const val = (item.Resultado_Actual || '').trim();
+                const ref = item.ValorReferencial || '---';
+                const met = item.Metodo || 'Manual';
+
+                // Pruebas que usan MINUTOS Y SEGUNDOS
+                const esMinSeg = aUpper.includes('COAGULACI') || aUpper.includes('SANGR');
+
+                let controlHtml = '';
+
+                if (esMinSeg) {
+                    // Extraer minutos y segundos previos si existen (soporta "6 min 30 seg", "6'30", etc.)
+                    let prevMin = '';
+                    let prevSeg = '';
+                    if (val) {
+                        const mMatch = val.match(/(\d+)\s*(?:min|'|m)/i);
+                        const sMatch = val.match(/(\d+)\s*(?:seg|"|s)/i);
+                        if (mMatch) prevMin = mMatch[1];
+                        if (sMatch) prevSeg = sMatch[1];
+
+                        // Si vino con formato "6'30"
+                        if (!prevMin && val.includes("'")) {
+                            const partes = val.split("'");
+                            prevMin = partes[0].trim();
+                            prevSeg = partes[1].replace(/["\s]/g, '').trim();
+                        }
+                    }
+
+                    controlHtml = `
+                        <div class="flex items-center justify-center space-x-1.5 font-mono">
+                            <input type="number" min="0" max="60"
+                                   id="min_${idx}"
+                                   class="w-16 bg-blue-50 border border-gray-300 rounded px-2 py-1 text-center font-bold text-blue-800 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                                   value="${prevMin}"
+                                   placeholder="0"
+                                   oninput="ModuloHematologia.actualizarTiempoDual(${idx})">
+                            <span class="text-gray-500 font-bold text-xs">min</span>
+                            
+                            <input type="number" min="0" max="59"
+                                   id="seg_${idx}"
+                                   class="w-16 bg-blue-50 border border-gray-300 rounded px-2 py-1 text-center font-bold text-blue-800 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                                   value="${prevSeg}"
+                                   placeholder="00"
+                                   oninput="ModuloHematologia.actualizarTiempoDual(${idx})">
+                            <span class="text-gray-500 font-bold text-xs">seg</span>
+
+                            <!-- Input oculto que lee el sistema para guardar en BD -->
+                            <input type="hidden"
+                                   id="hidden_res_${idx}"
+                                   class="input-resultado"
+                                   value="${val}"
+                                   data-movimiento="${idMovimiento}"
+                                   data-orden="${idOrden}"
+                                   data-cpt="${cptPadre}"
+                                   data-nombre="${analito}"
+                                   data-referencial="${ref}">
+                        </div>`;
+                } else {
+                    // Pruebas directas: TP, TTPA, INR, Plaquetas
+                    let ph = '0.00';
+                    if (aUpper.includes('PROTROMBINA') || aUpper.includes('TTPA') || aUpper.includes('TROMBOPLASTINA')) ph = 'Ej: 13.5 seg';
+                    else if (aUpper.includes('INR')) ph = 'Ej: 1.05';
+                    else if (aUpper.includes('PLAQUETA')) ph = 'Ej: 228000';
+
+                    controlHtml = `
+                        <input type="text"
+                               class="w-full bg-blue-50 border border-gray-300 rounded px-2.5 py-1.5 text-center font-bold text-blue-700 input-resultado text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                               value="${val}"
+                               data-movimiento="${idMovimiento}"
+                               data-orden="${idOrden}"
+                               data-cpt="${cptPadre}"
+                               data-nombre="${analito}"
+                               data-referencial="${ref}"
+                               placeholder="${ph}">`;
+                }
+
+                filasCoag += `
+                    <tr class="hover:bg-gray-50 border-b border-gray-100">
+                        <td class="p-3 font-bold text-gray-700">${analito}</td>
+                        <td class="p-2 w-64 text-center">${controlHtml}</td>
+                        <td class="p-3 text-center text-gray-500 text-xs font-mono">
+                            ${ref}
+                            <span class="text-xs text-gray-400 block" style="font-size: 10px;">${met}</span>
+                        </td>
+                    </tr>`;
+            });
+
+            return `
+                <div class="border border-gray-200 rounded-lg overflow-hidden font-mono text-xs">
+                    <div class="bg-red-50 text-red-900 font-bold px-4 py-2 border-b border-red-200 flex items-center justify-between">
+                        <span class="flex items-center"><i class="fa-solid fa-droplet text-red-600 mr-2"></i> PERFIL DE COAGULACIÓN</span>
+                        <span class="text-xs bg-red-200 text-red-900 px-2 py-0.5 rounded font-bold">Hemostasia</span>
+                    </div>
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-50 text-gray-600 border-b border-gray-200 text-xs">
+                            <tr>
+                                <th class="p-2.5">Prueba / Analito</th>
+                                <th class="p-2.5 text-center w-64">Resultado</th>
+                                <th class="p-2.5 text-center">Valor Referencial</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            ${filasCoag}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
 
         // A. HEMOGLOBINA INDIVIDUAL
         if (boton.includes('HEMOGLOBINA') && !examen.includes('HEMOGRAMA')) {
@@ -168,19 +287,35 @@ const ModuloHematologia = {
                 </div>`;
         }
 
+        
         // ---------------------------------------------------------------------
-        // D. TIEMPO DE SANGRÍA (MÉTODO DE DUKE - PRUEBA DE COAGULACIÓN)
+        // D. TIEMPO DE SANGRÍA INDIVIDUAL (MÉTODO DE DUKE CON ENTRADA DUAL)
         // ---------------------------------------------------------------------
         const esTiempoSangria = (boton.includes('SANGRIA') || boton.includes('SANGRÍA') || boton.includes('DUKE')) &&
                                 !boton.includes('TERAPEUTICA') && !boton.includes('TERAPÉUTICA') &&
                                 !examen.includes('TERAPEUTICA') && !examen.includes('TERAPÉUTICA') &&
-                                !examen.includes('COAGULACION');
+                                !examen.includes('COAGULACION') && !examen.includes('COAGULACIÓN');
 
         if (esTiempoSangria) {
-            const item = data[0];
-            const resultadoActual = (item.Resultado_Actual || '').trim();
+            const item = data[0] || {};
+            const val = (item.Resultado_Actual || '').trim();
             const valRef = 'Hasta 3.5 minutos';
             const metodo = item.Metodo || 'Método de Duke';
+
+            let prevMin = '';
+            let prevSeg = '';
+            if (val) {
+                const mMatch = val.match(/(\d+)\s*(?:min|'|m)/i);
+                const sMatch = val.match(/(\d+)\s*(?:seg|"|s)/i);
+                if (mMatch) prevMin = mMatch[1];
+                if (sMatch) prevSeg = sMatch[1];
+
+                if (!prevMin && val.includes("'")) {
+                    const partes = val.split("'");
+                    prevMin = partes[0].trim();
+                    prevSeg = partes[1].replace(/["\s]/g, '').trim();
+                }
+            }
 
             return `
                 <div class="border border-gray-200 rounded-lg overflow-hidden font-mono text-xs">
@@ -192,22 +327,41 @@ const ModuloHematologia = {
                         <thead class="bg-gray-50 text-gray-600 border-b border-gray-200 text-xs">
                             <tr>
                                 <th class="p-2.5">Parámetro</th>
-                                <th class="p-2.5 text-center w-48">Resultado</th>
+                                <th class="p-2.5 text-center w-64">Resultado</th>
                                 <th class="p-2.5 text-center">Referencial</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
+                            <tr class="hover:bg-gray-50">
                                 <td class="p-3 font-bold text-gray-700">Tiempo de sangría</td>
-                                <td class="p-2 w-48 text-center">
-                                    <input type="text" class="w-full bg-blue-50 border border-gray-300 rounded px-2.5 py-1.5 text-center font-bold text-blue-700 input-resultado text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
-                                           value="${resultadoActual}"
-                                           data-movimiento="${idMovimiento}"
-                                           data-orden="${idOrden}"
-                                           data-cpt="${cptPadre}"
-                                           data-nombre="TIEMPO DE SANGRIA"
-                                           data-referencial="${valRef}"
-                                           placeholder="Ej: 2 min 00 seg">
+                                <td class="p-2 w-64 text-center">
+                                    <div class="flex items-center justify-center space-x-1.5 font-mono">
+                                        <input type="number" min="0" max="60"
+                                               id="min_duke"
+                                               class="w-16 bg-blue-50 border border-gray-300 rounded px-2 py-1 text-center font-bold text-blue-800 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                                               value="${prevMin}"
+                                               placeholder="0"
+                                               oninput="ModuloHematologia.actualizarTiempoDuke()">
+                                        <span class="text-gray-500 font-bold text-xs">min</span>
+                                        
+                                        <input type="number" min="0" max="59"
+                                               id="seg_duke"
+                                               class="w-16 bg-blue-50 border border-gray-300 rounded px-2 py-1 text-center font-bold text-blue-800 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                                               value="${prevSeg}"
+                                               placeholder="00"
+                                               oninput="ModuloHematologia.actualizarTiempoDuke()">
+                                        <span class="text-gray-500 font-bold text-xs">seg</span>
+
+                                        <input type="hidden"
+                                               id="hidden_res_duke"
+                                               class="input-resultado"
+                                               value="${val}"
+                                               data-movimiento="${idMovimiento}"
+                                               data-orden="${idOrden}"
+                                               data-cpt="${cptPadre}"
+                                               data-nombre="TIEMPO DE SANGRIA"
+                                               data-referencial="${valRef}">
+                                    </div>
                                 </td>
                                 <td class="p-3 text-center text-gray-500 text-xs">${valRef}</td>
                             </tr>
@@ -215,6 +369,7 @@ const ModuloHematologia = {
                     </table>
                 </div>`;
         }
+
 
         // D. GRUPO SANGUÍNEO Y FACTOR RH (CON SELECT NATIVO)
         if (boton.includes('GRUPO SANGUINEO') || boton.includes('FACTOR RH')) {
@@ -422,5 +577,27 @@ const ModuloHematologia = {
                     <tbody>${htmlRows}</tbody>
                 </table>
             </div>`;
+    },
+
+    // FUNCIÓN QUE UNE MINUTOS Y SEGUNDOS AL ESCRIBIR
+    actualizarTiempoDuke: function() {
+        const minInput = document.getElementById('min_duke');
+        const segInput = document.getElementById('seg_duke');
+        const hiddenInput = document.getElementById('hidden_res_duke');
+
+        if (!hiddenInput) return;
+
+        const m = minInput ? minInput.value.trim() : '';
+        const s = segInput ? segInput.value.trim() : '';
+
+        if (m !== '' && s !== '') {
+            hiddenInput.value = `${m} min ${s} seg`;
+        } else if (m !== '' && s === '') {
+            hiddenInput.value = `${m} min`;
+        } else if (m === '' && s !== '') {
+            hiddenInput.value = `${s} seg`;
+        } else {
+            hiddenInput.value = '';
+        }
     }
 };

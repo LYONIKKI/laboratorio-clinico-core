@@ -214,6 +214,12 @@ async function verExamenesOrden(idMovimiento) {
         document.getElementById('detHcValue').value = (data.hc && data.hc !== '---') ? data.hc : (ordenMemoria?.HC || '---');
         document.getElementById('detEdadValue').value = data.edad || '---';
         document.getElementById('detResponsableValue').value = data.responsable || 'TECNÓLOGO DE TURNO';
+        document.getElementById('detEdadValue').value = data.edad || '---';
+        document.getElementById('detResponsableValue').value = data.responsable || 'TECNÓLOGO DE TURNO';
+        if (document.getElementById('detCargoValue')) {
+            document.getElementById('detCargoValue').value = data.cargo_firma || 'LABORATORIO CLÍNICO';
+        }
+        document.getElementById('detIdCuentaAtencion').value = data.idCuentaAtencion || 0;
         document.getElementById('detIdCuentaAtencion').value = data.idCuentaAtencion || 0;
         
         if (document.getElementById('detSeguroValue')) {
@@ -458,6 +464,7 @@ function imprimirDesdeModalDigitacion() {
     const diagEditado = document.getElementById('detDiagnosticoInput')?.value?.trim() || '---';
     const edad        = document.getElementById('detEdadValue')?.value?.trim() || '---';
     const responsable = document.getElementById('detResponsableValue')?.value || 'TECNÓLOGO DE TURNO';
+    const cargoFirma  = document.getElementById('detCargoValue')?.value || 'LABORATORIO CLÍNICO';
     const seguroReal  = document.getElementById('detSeguroValue')?.value || 'PARTICULAR / PAGANTE';
 
     guardarCabeceraClinica();
@@ -511,7 +518,8 @@ function imprimirDesdeModalDigitacion() {
         edad: edad,
         medico: medico,
         seguro: seguroReal,
-        responsable: responsable
+        responsable: responsable,
+        cargo_firma: cargoFirma // <- AGREGAR AQUÍ
     };
 
     if (typeof ImpresionLaboratorio !== 'undefined' && typeof ImpresionLaboratorio.reporteA4 === 'function') {

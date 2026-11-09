@@ -45,6 +45,7 @@ const ImpresionLaboratorio = {
         const horaString = ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
 
         const nombreResponsable = (infoBase.responsable || 'TECNÓLOGO DE TURNO').toUpperCase();
+        const cargoResponsable  = (infoBase.cargo_firma || 'LABORATORIO CLÍNICO').toUpperCase();
         const medicoSolicitante = (infoBase.medico || 'POR ASIGNAR').toUpperCase();
 
         const ventana = window.open('', '_blank', 'width=850,height=700');
@@ -138,18 +139,181 @@ const ImpresionLaboratorio = {
                 <table style="width: 100%; text-align: center; font-size: 12px; font-family: Arial, sans-serif;">
                     <tr>
                         <td style="width: 50%; vertical-align: bottom;">
-                            <span style="font-size: 11px;">Cerro de Pasco, ${fechaString} ${horaString}</span><br><br>
-                            <span style="display: inline-block; width: 220px; border-top: 1px solid #000; padding-top: 4px;">
-                                <strong>LUGAR Y FECHA DE EMISIÓN</strong>
-                            </span>
-                        </td>
-                        <td style="width: 50%; vertical-align: bottom;">
-                            <div style="display: inline-block; width: 240px; border-top: 1px solid #000; padding-top: 4px;">
-                                <strong style="display: block; font-size: 11px; text-transform: uppercase;">${nombreResponsable}</strong>
-                                <span style="font-size: 10px; color: #334155; display: block; font-weight: bold;">LABORATORIO CLÍNICO</span>
+                            <div style="display: inline-block; width: 280px; border-top: 1px solid #000; padding-top: 5px; text-align: center; font-family: monospace;">
+                                <b style="font-size: 11px; display: block; text-transform: uppercase;">${nombreResponsable}</b>
+                                <span style="font-size: 10px; color: #334155; display: block; font-weight: bold; text-transform: uppercase;">${cargoResponsable}</span>
                                 <span style="font-size: 9px; color: #64748b; display: block;">Firma y Sello del Responsable</span>
                             </div>
                         </td>
+                        
+                        <td style="width: 50%; vertical-align: bottom;">
+                            <div style="display: inline-block; width: 280px; border-top: 1px solid #000; padding-top: 5px; text-align: center; font-family: monospace;">
+                                <b style="font-size: 11px; display: block; text-transform: uppercase;">${infoBase.responsable}</b>
+                                <span style="font-size: 10px; color: #334155; display: block; font-weight: bold; text-transform: uppercase;">${infoBase.cargo_firma}</span>
+                                <span style="font-size: 9px; color: #64748b; display: block;">Firma y Sello del Responsable</span>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </body>
+        </html>`);
+        ventana.document.close();
+    },
+
+    // 3. Reporte A4 Oficial CONSOLIDADO (Imprime todos los exámenes de la orden con sus firmas)
+    reporteA4Consolidado: function(cabecera, examenes) {
+        const ahora = new Date();
+        const fechaString = ahora.toLocaleDateString('es-PE');
+        const horaString = ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        const medicoSolicitante = (cabecera.medico || 'POR ASIGNAR').toUpperCase();
+
+        // 1. Construir las tablas de exámenes completados
+        let tablasHTML = '';
+        const firmantesMap = {};
+
+        examenes.forEach(ex => {
+            if (!ex.analitos || ex.analitos.length === 0 || !ex.tieneResultado) return;
+
+            // Registrar firmante
+            const resp = (ex.responsable || 'TECNÓLOGO DE TURNO').toUpperCase();
+            const cargo = (ex.cargo_firma && ex.cargo_firma !== 'undefined') ? ex.cargo_firma.toUpperCase() : 'LABORATORIO CLÍNICO';
+            firmantesMap[resp] = cargo;
+
+            let filas = '';
+            ex.analitos.forEach(a => {
+                filas += `
+                    <tr>
+                        <td style="padding: 5px 8px; border-bottom: 1px dotted #000; font-weight: bold;">${a.analito}</td>
+                        <td style="padding: 5px 8px; border-bottom: 1px dotted #000; text-align: center; color: #1d4ed8; font-weight: bold; font-size: 11px;">${a.resultado}</td>
+                        <td style="padding: 5px 8px; border-bottom: 1px dotted #000; text-align: center; color: #475569; font-size: 10px;">${a.referencial}</td>
+                    </tr>`;
+            });
+
+            tablasHTML += `
+                <div style="margin-top: 14px; page-break-inside: avoid;">
+                    <div style="background-color: #f1f5f9; border: 1px solid #cbd5e1; padding: 4px 8px; font-weight: bold; font-size: 11px; text-transform: uppercase;">
+                        [EXAMEN] ${ex.examen}
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 2px;">
+                        <thead>
+                            <tr style="background-color: #f8fafc; font-size: 10px;">
+                                <th style="text-align: left; padding: 5px 8px; border-bottom: 1px solid #000; width: 45%;">Analito / Componente</th>
+                                <th style="text-align: center; padding: 5px 8px; border-bottom: 1px solid #000; width: 25%;">Resultado</th>
+                                <th style="text-align: center; padding: 5px 8px; border-bottom: 1px solid #000; width: 30%;">Valor Referencial</th>
+                            </tr>
+                        </thead>
+                        <tbody>${filas}</tbody>
+                    </table>
+                </div>`;
+        });
+
+        if (!tablasHTML) {
+            alert("No hay exámenes con resultados completados para imprimir.");
+            return;
+        }
+
+        // 2. Construir bloques de firmas (1, 2 o más profesionales)
+        const listaFirmas = Object.entries(firmantesMap);
+        let firmasHTML = '';
+        const anchoTd = listaFirmas.length > 1 ? `${Math.floor(100 / Math.min(listaFirmas.length, 3))}%` : '50%';
+
+        listaFirmas.forEach(([nombre, cargo]) => {
+            firmasHTML += `
+                <td style="width: ${anchoTd}; vertical-align: bottom; padding: 0 10px;">
+                    <div style="width: 220px; border-top: 1px solid #000; padding-top: 4px; margin: 0 auto; text-align: center; font-family: monospace;">
+                        <b style="font-size: 10.5px; display: block; text-transform: uppercase;">${nombre}</b>
+                        <span style="font-size: 9.5px; color: #334155; display: block; font-weight: bold; text-transform: uppercase;">${cargo}</span>
+                        <span style="font-size: 8.5px; color: #64748b; display: block;">Firma y Sello del Responsable</span>
+                    </div>
+                </td>`;
+        });
+
+        const ventana = window.open('', '_blank', 'width=850,height=750');
+        ventana.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Reporte_Consolidado_${cabecera.idMovimiento}</title>
+            <style>
+                body { font-family: "Courier New", Courier, monospace; margin: 25px; color: #000; font-size: 11px; line-height: 1.35; }
+                .header-table-logos { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
+                .td-logo-left { width: 140px; text-align: left; vertical-align: middle; }
+                .td-logo-right { width: 140px; text-align: right; vertical-align: middle; }
+                .logo-minsa { height: 40px; width: auto; object-fit: contain; }
+                .logo-carrion { height: 50px; width: auto; object-fit: contain; }
+                .header-center-title { text-align: center; font-family: 'Arial', sans-serif; font-size: 12.5px; font-weight: bold; line-height: 1.3; }
+                .sub-header-bar { width: 100%; text-align: center; font-family: 'Arial', sans-serif; font-size: 12px; font-weight: bold; color: #155724; background-color: #d4edda !important; border: 1.5px solid #c3e6cb; padding: 5px 0; margin-bottom: 10px; text-transform: uppercase; }
+                .patient-box { width: 100%; border: 2px solid #000; padding: 10px 8px; margin-bottom: 10px; box-sizing: border-box; }
+                .patient-table { width: 100%; border-collapse: collapse; }
+                .lbl-clinico { font-weight: bold; font-family: 'Arial', sans-serif; font-size: 10.5px; white-space: nowrap; }
+                .linea-puntos { border-bottom: 1px dotted #000; font-weight: bold; font-size: 11px; padding-left: 5px; text-transform: uppercase; display: block; width: 100%; }
+                .footer-section { margin-top: 35px; width: 100%; page-break-inside: avoid; }
+                @media print { 
+                    .no-print { display: none; } 
+                    body { margin: 15px; } 
+                    .sub-header-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; } 
+                    tr { page-break-inside: avoid; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="no-print" style="margin-bottom: 10px; text-align: right;">
+                <button onclick="window.print();" style="padding: 8px 18px; font-family: Arial; font-weight: bold; background: #16a34a; color: white; border: none; border-radius: 6px; cursor: pointer;">CONFIRMAR IMPRESIÓN CONSOLIDADA</button>
+            </div>
+
+            <table class="header-table-logos">
+                <tr>
+                    <td class="td-logo-left"><img src="/laboratorio/public/img/logo_minsa.png" class="logo-minsa" alt="MINSA"></td>
+                    <td class="header-center-title">MINISTERIO DE SALUD - HOSPITAL REGIONAL<br>DR. DANIEL ALCIDES CARRIÓN GARCÍA</td>
+                    <td class="td-logo-right"><img src="/laboratorio/public/img/logo_hospital.png" class="logo-carrion" alt="Hospital Carrión"></td>
+                </tr>
+            </table>
+
+            <div class="sub-header-bar">INFORME ANALÍTICO CONSOLIDADO DE LABORATORIO CLÍNICO</div>
+
+            <div class="patient-box">
+                <table class="patient-table">
+                    <tr>
+                        <td class="lbl-clinico" style="width: 140px;">Paciente:</td>
+                        <td><span class="linea-puntos">${cabecera.paciente || '---'}</span></td>
+                        <td class="lbl-clinico" style="width: 100px;">Seguro:</td>
+                        <td style="width: 160px;"><span class="linea-puntos">${cabecera.seguro || 'SIS'}</span></td>
+                    </tr>
+                    <tr style="height: 5px;"></tr>
+                    <tr>
+                        <td class="lbl-clinico">Diagnóstico:</td>
+                        <td><span class="linea-puntos">${cabecera.diagnostico || '---'}</span></td>
+                        <td class="lbl-clinico">DNI / HC:</td>
+                        <td><span class="linea-puntos">${cabecera.dni || '---'} / ${cabecera.hc || '---'}</span></td>
+                    </tr>
+                    <tr style="height: 5px;"></tr>
+                    <tr>
+                        <td class="lbl-clinico">Servicio / Cama:</td>
+                        <td><span class="linea-puntos">${cabecera.servicio || 'CONSULTA EXTERNA'} / ${cabecera.cama || '---'}</span></td>
+                        <td class="lbl-clinico">Edad / Fecha:</td>
+                        <td><span class="linea-puntos">${cabecera.edad || '---'} AÑOS / ${fechaString}</span></td>
+                    </tr>
+                    <tr style="height: 5px;"></tr>
+                    <tr>
+                        <td class="lbl-clinico">Médico Prescriptor:</td>
+                        <td colspan="3"><span class="linea-puntos">${medicoSolicitante}</span></td>
+                    </tr>
+                </table>
+            </div>
+
+            ${tablasHTML}
+
+            <div class="footer-section">
+                <table style="width: 100%; text-align: center; font-size: 11px; font-family: Arial, sans-serif;">
+                    <tr>
+                        <td style="width: 30%; vertical-align: bottom;">
+                            <span style="font-size: 10.5px;">Cerro de Pasco, ${fechaString} ${horaString}</span><br><br>
+                            <span style="display: inline-block; width: 190px; border-top: 1px solid #000; padding-top: 4px;">
+                                <strong>LUGAR Y FECHA DE EMISIÓN</strong>
+                            </span>
+                        </td>
+                        ${firmasHTML}
                     </tr>
                 </table>
             </div>

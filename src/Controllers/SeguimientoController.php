@@ -169,7 +169,7 @@ class SeguimientoController {
         $stmtCab = sqlsrv_query($conn, $sqlCab, [$idMovimiento]);
         $cabecera = ($stmtCab !== false) ? sqlsrv_fetch_array($stmtCab, SQLSRV_FETCH_ASSOC) : null;
 
-        // 2. Extraer los analitos agrupados por CPT evitando filas repetidas
+        // 2. Extraer analitos con su IdUsuario respectivo
         $sqlResultados = "SELECT 
                             lrd.IdResultadoDetalle,
                             lrd.IdMovimiento,
@@ -179,7 +179,8 @@ class SeguimientoController {
                             ISNULL(lrd.ValorResultado, '---') AS Resultado,
                             ISNULL(NULLIF(lrd.ValorReferencial, 'N/A'), ISNULL(pr.ValorReferencial, 'N/A')) AS Referencial,
                             ISNULL(pr.Metodo, 'Automatizado') AS Metodo,
-                            ISNULL(lrd.Observaciones, '') AS Observaciones
+                            ISNULL(lrd.Observaciones, '') AS Observaciones,
+                            lrd.IdUsuario
                           FROM dbo.LabResultadoDetalle lrd
                           LEFT JOIN dbo.FactCatalogoServicios cat 
                               ON lrd.IdProductoCPT = cat.IdProducto
@@ -191,9 +192,9 @@ class SeguimientoController {
 
         $stmtRes = sqlsrv_query($conn, $sqlResultados, [$idMovimiento]);
         
-        // Mapeo organizado por CPT con filtro estricto anti-duplicados
         $mapaAnalitosPorCpt = [];
-        $analitosVistos = [];
+        $mapaUsuarioPorCpt  = [];
+        $analitosVistos     = [];
 
         if ($stmtRes !== false) {
             while ($rowA = sqlsrv_fetch_array($stmtRes, SQLSRV_FETCH_ASSOC)) {
@@ -201,11 +202,14 @@ class SeguimientoController {
                 $nombreAnalito = trim($rowA['Analito']);
                 $claveUnica = $cptItem . '_' . strtoupper($nombreAnalito);
 
-                // Si ya se agregó este analito en este CPT, descartar duplicado
                 if (isset($analitosVistos[$claveUnica])) {
                     continue;
                 }
                 $analitosVistos[$claveUnica] = true;
+
+                if (!empty($rowA['IdUsuario'])) {
+                    $mapaUsuarioPorCpt[$cptItem] = intval($rowA['IdUsuario']);
+                }
 
                 if (!isset($mapaAnalitosPorCpt[$cptItem])) {
                     $mapaAnalitosPorCpt[$cptItem] = [];
@@ -221,7 +225,24 @@ class SeguimientoController {
             }
         }
 
-        // 3. Obtener exámenes de la orden (CPT) y asignar exclusivamente sus analitos
+        // 3. Catálogo de usuarios y cargos desde PostgreSQL (db_auth)
+        $catalogoUsuariosPg = [];
+        try {
+            $connPg = $this->container->get('db_auth');
+            $resPg = pg_query($connPg, "SELECT id, nombre, COALESCE(cargo, 'TECNÓLOGO MÉDICO') AS cargo FROM usuarios_sigh");
+            if ($resPg) {
+                while ($u = pg_fetch_assoc($resPg)) {
+                    $catalogoUsuariosPg[intval($u['id'])] = [
+                        'nombre' => trim($u['nombre']),
+                        'cargo'  => trim($u['cargo'])
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log("Error PG SeguimientoController: " . $e->getMessage());
+        }
+
+        // 4. Mapear exámenes con su responsable y profesión
         $sqlExamenes = "SELECT 
                             cpt.idProductoCPT,
                             ISNULL(cat.Nombre, 'EXAMEN CLÍNICO') AS ExamenPrincipal
@@ -232,16 +253,14 @@ class SeguimientoController {
 
         $stmtEx = sqlsrv_query($conn, $sqlExamenes, [$idMovimiento]);
         $examenes = [];
+        $responsablesOrden = [];
 
         if ($stmtEx !== false) {
             while ($rowE = sqlsrv_fetch_array($stmtEx, SQLSRV_FETCH_ASSOC)) {
                 $cptId = intval($rowE['idProductoCPT']);
                 $nombreEx = trim($rowE['ExamenPrincipal']);
-
-                // Extraer únicamente los analitos que corresponden a este CPT
                 $analitosDelExamen = $mapaAnalitosPorCpt[$cptId] ?? [];
                 
-                // Determinar si tiene resultados asentados
                 $tieneResultados = false;
                 foreach ($analitosDelExamen as $a) {
                     if (!empty($a['resultado']) && $a['resultado'] !== '---') {
@@ -250,15 +269,31 @@ class SeguimientoController {
                     }
                 }
 
+                $idUserCpt = $mapaUsuarioPorCpt[$cptId] ?? null;
+                $nombreResp = 'TECNÓLOGO DE TURNO';
+                $cargoResp  = 'LABORATORIO CLÍNICO';
+
+                if ($idUserCpt && isset($catalogoUsuariosPg[$idUserCpt])) {
+                    $nombreResp = $catalogoUsuariosPg[$idUserCpt]['nombre'];
+                    $cargoResp  = $catalogoUsuariosPg[$idUserCpt]['cargo'];
+                    $responsablesOrden[$idUserCpt] = [
+                        'nombre' => $nombreResp,
+                        'cargo'  => $cargoResp
+                    ];
+                }
+
                 $examenes[] = [
                     'idProductoCPT'  => $cptId,
                     'examen'         => $nombreEx,
                     'analitos'       => $analitosDelExamen,
                     'tieneResultado' => $tieneResultados,
-                    'responsable'    => 'TECNÓLOGO DE TURNO'
+                    'responsable'    => $nombreResp,
+                    'cargo_firma'    => $cargoResp
                 ];
             }
         }
+
+        $primerResp = !empty($responsablesOrden) ? reset($responsablesOrden) : null;
 
         $data = [
             'cabecera' => [
@@ -273,7 +308,9 @@ class SeguimientoController {
                 'diagnostico'  => $cabecera['Diagnostico'] ?? '---',
                 'medico'       => $cabecera['Medico'] ?? 'POR ASIGNAR',
                 'servicio'     => $cabecera['Servicio'] ?? 'CONSULTA EXTERNA',
-                'seguro'       => $cabecera['Seguro'] ?? 'SIS'
+                'seguro'       => $cabecera['Seguro'] ?? 'SIS',
+                'responsable'  => $primerResp ? $primerResp['nombre'] : 'TECNÓLOGO DE TURNO',
+                'cargo_firma'  => $primerResp ? $primerResp['cargo'] : 'LABORATORIO CLÍNICO'
             ],
             'examenes' => $examenes
         ];
@@ -281,4 +318,5 @@ class SeguimientoController {
         $response->getBody()->write(json_encode(['status' => 'success', 'data' => $data]));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
+
 }

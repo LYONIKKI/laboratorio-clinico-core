@@ -99,9 +99,19 @@
                         Informe Analítico de Laboratorio (Solo Lectura)
                     </h4>
                 </div>
-                <button type="button" onclick="cerrarModalLectura()" class="text-green-200 hover:text-white transition cursor-pointer focus:outline-none">
-                    <i class="fa-solid fa-times text-lg"></i>
-                </button>
+                
+                <div class="flex items-center space-x-2">
+                    <!-- BOTÓN IMPRIMIR ORDEN COMPLETA -->
+                    <button type="button" onclick="imprimirTodoConsolidadoMedico()" 
+                            class="bg-white hover:bg-green-50 text-green-800 font-bold px-3 py-1.5 rounded-lg text-xs shadow flex items-center space-x-1.5 transition cursor-pointer">
+                        <i class="fa-solid fa-print text-green-700"></i>
+                        <span>Imprimir Todo</span>
+                    </button>
+
+                    <button type="button" onclick="cerrarModalLectura()" class="text-green-200 hover:text-white transition cursor-pointer focus:outline-none">
+                        <i class="fa-solid fa-times text-lg"></i>
+                    </button>
+                </div>
             </div>
 
             <!-- Ficha Clínica Fija del Paciente -->

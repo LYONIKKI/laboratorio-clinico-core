@@ -1,7 +1,7 @@
 // public/js/solicitudes/bioquimica.js
-// Manejo exclusivo de Bioquímica Clínica con enrutamiento prioritario y cálculos reactivos:
-// 1. Perfil Hepático Completo
-// 2. Perfil Lipídico (Friedewald)
+// Manejo exclusivo de Bioquímica Clínica con normalización de caracteres y cálculos reactivos:
+// 1. Perfil Lipídico (Friedewald) - PRIORIDAD MÁXIMA
+// 2. Perfil Hepático Completo (con sumas automáticas de bilirrubinas y proteínas)
 // 3. Bilirrubinas (Total, Directa, Indirecta)
 // 4. Proteínas Totales y Fraccionadas
 // 5. Transaminasas Duales (TGO y TGP)
@@ -9,16 +9,24 @@
 
 const ModuloBioquimica = {
 
+    // Función auxiliar para quitar tildes y caracteres especiales
+    limpiarTexto: function(str) {
+        return (str || '')
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toUpperCase()
+            .trim();
+    },
+
     esBioquimica: function(nombreExamen, botonPresionado, idCpt) {
-        const examen = (nombreExamen || '').toUpperCase();
-        const boton = (botonPresionado || '').toUpperCase();
+        const examen = ModuloBioquimica.limpiarTexto(nombreExamen);
+        const boton  = ModuloBioquimica.limpiarTexto(botonPresionado);
 
         return boton.includes('CREATININA') ||
                boton.includes('GLUCOSA') ||
                boton.includes('UREA') ||
                boton.includes('COLESTEROL') ||
                boton.includes('TRIGLICERID') ||
-               boton.includes('TRIGLICÉRID') ||
                boton.includes('TRANSAMINASA') ||
                boton.includes('ASPARTATO') ||
                boton.includes('ALANINA') ||
@@ -26,16 +34,11 @@ const ModuloBioquimica = {
                boton.includes('SGPT') ||
                boton.includes('BILIRRUBINA') ||
                boton.includes('ACIDO URICO') ||
-               boton.includes('ÁCIDO ÚRICO') ||
-               boton.includes('PERFIL') ||
                boton.includes('LIPID') ||
                boton.includes('LIPOPROTEIN') ||
                boton.includes('HEPATIC') ||
-               boton.includes('HEPÁTIC') ||
                boton.includes('PROTEINA') ||
-               boton.includes('PROTEÍNA') ||
                boton.includes('ALBUMINA') ||
-               boton.includes('ALBÚMINA') ||
                boton.includes('GLOBULINA') ||
                boton.includes('FOSFATASA') ||
                boton.includes('GGTP') ||
@@ -50,118 +53,35 @@ const ModuloBioquimica = {
                examen.includes('LIPID') ||
                examen.includes('LIPOPROTEIN') ||
                examen.includes('HEPATIC') ||
-               examen.includes('HEPÁTIC') ||
                examen.includes('PROTEINA') ||
-               examen.includes('PROTEÍNA') ||
                examen.includes('ALBUMINA') ||
-               examen.includes('ALBÚMINA') ||
                examen.includes('TRANSAMINASA');
     },
 
     renderizar: function(data, botonPresionado, nombreExamenOriginal, idMovimiento, idOrden) {
         const cptPadre = data[0]?.idProductoCPT || 0;
         const metodoGeneral = data[0]?.Metodo || 'Automatizado';
-        const examenUpper = (nombreExamenOriginal || '').toUpperCase();
-        const botonUpper = (botonPresionado || '').toUpperCase();
+        
+        // Cadenas limpias sin tildes para evaluar condiciones sin errores
+        const examenUpper = ModuloBioquimica.limpiarTexto(nombreExamenOriginal);
+        const botonUpper  = ModuloBioquimica.limpiarTexto(botonPresionado);
 
         // ---------------------------------------------------------------------
-        // 1. PRIORIDAD: PERFIL HEPÁTICO COMPLETO (CON CÁLCULOS AUTOMÁTICOS)
+        // 1. PRIORIDAD: PERFIL LIPÍDICO COMPLETO (FRIEDEWALD AUTOMÁTICO)
+        // Se evalúa primero para que "LIPOPROTEINA" no caiga en "PROTEINA"
         // ---------------------------------------------------------------------
-        if (botonUpper.includes('HEPATIC') || examenUpper.includes('HEPATIC') || botonUpper.includes('HEPÁTIC') || examenUpper.includes('HEPÁTIC')) {
-            let filasHep = '';
+        const esPerfilLipidico = botonUpper.includes('LIPID') || examenUpper.includes('LIPID') ||
+                                 botonUpper.includes('LIPOPROTEIN') || examenUpper.includes('LIPOPROTEIN');
 
-            data.forEach(item => {
-                const analito = item.SubPrueba || item.Examen_Principal || 'ANALITO';
-                const aUpper = analito.toUpperCase();
-                const val = (item.Resultado_Actual || '').trim();
-                const ref = (item.ValorReferencial && item.ValorReferencial !== 'N/A') ? item.ValorReferencial : '---';
-                const met = item.Metodo || 'Cinético UV';
-
-                let idAttr = '';
-                let oninputAttr = '';
-                let extraNota = '';
-                let bgClase = 'bg-blue-50';
-
-                if (aUpper.includes('ALB')) {
-                    idAttr = 'id="input_hep_albumina"';
-                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoProteinas()"';
-                } else if (aUpper.includes('GLOB')) {
-                    idAttr = 'id="input_hep_globulina"';
-                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoProteinas()"';
-                } else if (aUpper.includes('PROTEINA') || aUpper.includes('PROTEÍNA')) {
-                    idAttr = 'id="input_hep_pt"';
-                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoGlobulinaPorPT()"';
-                    extraNota = '<span class="text-xs text-blue-600 block font-normal" style="font-size: 10px;">(Albúmina + Globulinas)</span>';
-                    bgClase = 'bg-white border-blue-400 text-blue-800';
-                } else if (aUpper.includes('DIRECTA')) {
-                    idAttr = 'id="input_hep_bili_directa"';
-                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoBilirrubinas()"';
-                } else if (aUpper.includes('INDIRECTA')) {
-                    idAttr = 'id="input_hep_bili_indirecta"';
-                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoBilirrubinas()"';
-                } else if (aUpper.includes('TOTAL') && aUpper.includes('BILIRRUBINA')) {
-                    idAttr = 'id="input_hep_bili_total"';
-                    extraNota = '<span class="text-xs text-blue-600 block font-normal" style="font-size: 10px;">(Directa + Indirecta)</span>';
-                    bgClase = 'bg-white border-blue-400 text-blue-800';
-                }
-
-                filasHep += `
-                    <tr class="hover:bg-gray-50 border-b border-gray-100">
-                        <td class="p-3 font-bold text-gray-700">
-                            ${analito}
-                            ${extraNota}
-                        </td>
-                        <td class="p-2 w-48 text-center">
-                            <input type="text" ${idAttr} ${oninputAttr}
-                                   class="w-full ${bgClase} border border-gray-300 rounded px-2.5 py-1.5 text-center font-bold text-blue-700 input-resultado text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
-                                   value="${val}"
-                                   data-movimiento="${idMovimiento}"
-                                   data-orden="${idOrden}"
-                                   data-cpt="${cptPadre}"
-                                   data-nombre="${analito}"
-                                   data-referencial="${ref}"
-                                   placeholder="0.00">
-                        </td>
-                        <td class="p-3 text-center text-gray-500 text-xs font-mono">
-                            ${ref}
-                            <span class="text-xs text-gray-400 block" style="font-size: 10px;">${met}</span>
-                        </td>
-                    </tr>`;
-            });
-
-            return `
-                <div class="border border-gray-200 rounded-lg overflow-hidden font-mono text-xs">
-                    <div class="bg-emerald-50 text-emerald-900 font-bold px-4 py-2 border-b border-emerald-200 flex items-center justify-between">
-                        <span class="flex items-center"><i class="fa-solid fa-notes-medical text-emerald-600 mr-2"></i> PERFIL HEPÁTICO COMPLETO</span>
-                        <span class="text-xs bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded font-bold">Automatizado / Cinético</span>
-                    </div>
-                    <table class="w-full text-left border-collapse">
-                        <thead class="bg-gray-50 text-gray-600 border-b border-gray-200 text-xs">
-                            <tr>
-                                <th class="p-2.5">Analito</th>
-                                <th class="p-2.5 text-center w-48">Resultado</th>
-                                <th class="p-2.5 text-center">Rango Referencial</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            ${filasHep}
-                        </tbody>
-                    </table>
-                </div>`;
-        }
-
-        // ---------------------------------------------------------------------
-        // 2. PRIORIDAD: PERFIL LIPÍDICO COMPLETO (FRIEDEWALD)
-        // ---------------------------------------------------------------------
-        if (botonUpper.includes('LIPID') || examenUpper.includes('LIPID') || botonUpper.includes('LIPOPROTEIN') || examenUpper.includes('LIPOPROTEIN')) {
+        if (esPerfilLipidico) {
             let valCol = '', valTri = '', valHdl = '', valLdl = '', valVldl = '';
 
             data.forEach(item => {
-                const n = (item.SubPrueba || '').toUpperCase();
+                const n = ModuloBioquimica.limpiarTexto(item.SubPrueba || item.Examen_Principal);
                 const r = (item.Resultado_Actual || '').trim();
                 
                 if (n.includes('TOTAL') || n === 'COLESTEROL') valCol = r;
-                else if (n.includes('TRIGLICERID') || n.includes('TRIGLICÉRID')) valTri = r;
+                else if (n.includes('TRIGLICERID')) valTri = r;
                 else if (n.includes('HDL')) valHdl = r;
                 else if (n.includes('LDL')) valLdl = r;
                 else if (n.includes('VLDL')) valVldl = r;
@@ -272,13 +192,100 @@ const ModuloBioquimica = {
         }
 
         // ---------------------------------------------------------------------
-        // 3. PRIORIDAD: BILIRRUBINAS
+        // 2. PRIORIDAD: PERFIL HEPÁTICO COMPLETO (CABECERA ESMERALDA + CÁLCULOS REACTIVOS)
+        // ---------------------------------------------------------------------
+        if (botonUpper.includes('HEPATIC') || examenUpper.includes('HEPATIC')) {
+            let filasHep = '';
+
+            data.forEach(item => {
+                const analito = item.SubPrueba || item.Examen_Principal || 'ANALITO';
+                const aUpper = ModuloBioquimica.limpiarTexto(analito);
+                const val = (item.Resultado_Actual || '').trim();
+                const ref = (item.ValorReferencial && item.ValorReferencial !== 'N/A') ? item.ValorReferencial : '---';
+                const met = item.Metodo || 'Cinético UV';
+
+                let idAttr = '';
+                let oninputAttr = '';
+                let extraNota = '';
+                let bgClase = 'bg-blue-50';
+
+                if (aUpper.includes('ALB')) {
+                    idAttr = 'id="input_hep_albumina"';
+                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoProteinas()"';
+                } else if (aUpper.includes('GLOB')) {
+                    idAttr = 'id="input_hep_globulina"';
+                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoProteinas()"';
+                } else if (aUpper.includes('PROTEINA')) {
+                    idAttr = 'id="input_hep_pt"';
+                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoGlobulinaPorPT()"';
+                    extraNota = '<span class="text-xs text-blue-600 block font-normal" style="font-size: 10px;">(Albúmina + Globulinas)</span>';
+                    bgClase = 'bg-white border-blue-400 text-blue-800';
+                } else if (aUpper.includes('DIRECTA')) {
+                    idAttr = 'id="input_hep_bili_directa"';
+                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoBilirrubinas()"';
+                } else if (aUpper.includes('INDIRECTA')) {
+                    idAttr = 'id="input_hep_bili_indirecta"';
+                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoBilirrubinas()"';
+                } else if (aUpper.includes('TOTAL') && aUpper.includes('BILIRRUBINA')) {
+                    idAttr = 'id="input_hep_bili_total"';
+                    oninputAttr = 'oninput="ModuloBioquimica.calcularHepaticoBilirrubinaIndirectaPorTotal()"';
+                    extraNota = '<span class="text-xs text-blue-600 block font-normal" style="font-size: 10px;">(Directa + Indirecta)</span>';
+                    bgClase = 'bg-white border-blue-400 text-blue-800';
+                }
+
+                filasHep += `
+                    <tr class="hover:bg-gray-50 border-b border-gray-100">
+                        <td class="p-3 font-bold text-gray-700">
+                            ${analito}
+                            ${extraNota}
+                        </td>
+                        <td class="p-2 w-48 text-center">
+                            <input type="text" ${idAttr} ${oninputAttr}
+                                   class="w-full ${bgClase} border border-gray-300 rounded px-2.5 py-1.5 text-center font-bold text-blue-700 input-resultado text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                                   value="${val}"
+                                   data-movimiento="${idMovimiento}"
+                                   data-orden="${idOrden}"
+                                   data-cpt="${cptPadre}"
+                                   data-nombre="${analito}"
+                                   data-referencial="${ref}"
+                                   placeholder="0.00">
+                        </td>
+                        <td class="p-3 text-center text-gray-500 text-xs font-mono">
+                            ${ref}
+                            <span class="text-xs text-gray-400 block" style="font-size: 10px;">${met}</span>
+                        </td>
+                    </tr>`;
+            });
+
+            return `
+                <div class="border border-gray-200 rounded-lg overflow-hidden font-mono text-xs">
+                    <div class="bg-emerald-50 text-emerald-900 font-bold px-4 py-2 border-b border-emerald-200 flex items-center justify-between">
+                        <span class="flex items-center"><i class="fa-solid fa-notes-medical text-emerald-600 mr-2"></i> PERFIL HEPÁTICO COMPLETO</span>
+                        <span class="text-xs bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded font-bold">Automatizado / Cinético</span>
+                    </div>
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-50 text-gray-600 border-b border-gray-200 text-xs">
+                            <tr>
+                                <th class="p-2.5">Analito</th>
+                                <th class="p-2.5 text-center w-48">Resultado</th>
+                                <th class="p-2.5 text-center">Rango Referencial</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            ${filasHep}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        // ---------------------------------------------------------------------
+        // 3. PRIORIDAD: BILIRRUBINAS (TOTAL, DIRECTA E INDIRECTA)
         // ---------------------------------------------------------------------
         if (botonUpper.includes('BILIRRUBINA') || examenUpper.includes('BILIRRUBINA')) {
             let valTotal = '', valDirecta = '', valIndirecta = '';
 
             data.forEach(item => {
-                const nombre = (item.SubPrueba || '').toUpperCase();
+                const nombre = ModuloBioquimica.limpiarTexto(item.SubPrueba || item.Examen_Principal);
                 const res = (item.Resultado_Actual || '').trim();
                 if (nombre.includes('DIRECTA')) valDirecta = res;
                 else if (nombre.includes('INDIRECTA')) valIndirecta = res;
@@ -378,18 +385,18 @@ const ModuloBioquimica = {
 
         // ---------------------------------------------------------------------
         // 4. PRIORIDAD: PROTEÍNAS TOTALES Y FRACCIONADAS
+        // Excluye expresamente perfil lipídico y perfil hepático
         // ---------------------------------------------------------------------
         const esProteinaFraccionada = (
             botonUpper.includes('PROTEINA') || examenUpper.includes('PROTEINA') ||
-            botonUpper.includes('PROTEÍNA') || examenUpper.includes('PROTEÍNA') ||
-            botonUpper.includes('ALBUMINA') || botonUpper.includes('ALBÚMINA')
-        ) && !examenUpper.includes('HEPATIC') && !examenUpper.includes('HEPÁTIC') && !botonUpper.includes('HEPATIC') && !botonUpper.includes('HEPÁTIC');
+            botonUpper.includes('ALBUMINA') || examenUpper.includes('ALBUMINA')
+        ) && !esPerfilLipidico && !examenUpper.includes('HEPATIC') && !botonUpper.includes('HEPATIC');
 
         if (esProteinaFraccionada) {
             let valPT = '', valAlb = '', valGlob = '';
 
             data.forEach(item => {
-                const n = (item.SubPrueba || '').toUpperCase();
+                const n = ModuloBioquimica.limpiarTexto(item.SubPrueba || item.Examen_Principal);
                 const r = (item.Resultado_Actual || '').trim();
                 if (n.includes('TOTAL')) valPT = r;
                 else if (n.includes('ALB')) valAlb = r;
@@ -481,13 +488,13 @@ const ModuloBioquimica = {
         // 5. PRIORIDAD: TRANSAMINASAS DUALES (TGO Y TGP)
         // ---------------------------------------------------------------------
         const esTransaminasas = (botonUpper.includes('TRANSAMINASA') || examenUpper.includes('TRANSAMINASA') || (botonUpper.includes('GOT') && botonUpper.includes('GPT'))) &&
-                                !botonUpper.includes('HEPATIC') && !examenUpper.includes('HEPATIC') && !botonUpper.includes('HEPÁTIC') && !examenUpper.includes('HEPÁTIC');
+                                !botonUpper.includes('HEPATIC') && !examenUpper.includes('HEPATIC');
 
         if (esTransaminasas) {
             let valTgo = '', valTgp = '';
 
             data.forEach(item => {
-                const n = (item.SubPrueba || '').toUpperCase();
+                const n = ModuloBioquimica.limpiarTexto(item.SubPrueba || item.Examen_Principal);
                 const r = (item.Resultado_Actual || '').trim();
                 if (n.includes('T.G.O') || n.includes('TGO') || n.includes('AST') || n.includes('ASPARTATO')) valTgo = r;
                 else if (n.includes('T.G.P') || n.includes('TGP') || n.includes('ALT') || n.includes('ALANINA')) valTgp = r;
@@ -733,5 +740,19 @@ const ModuloBioquimica = {
         if (!isNaN(d) && !isNaN(i)) totInput.value = (d + i).toFixed(2);
         else if (!isNaN(d) && isNaN(i)) totInput.value = d.toFixed(2);
         else if (isNaN(d) && !isNaN(i)) totInput.value = i.toFixed(2);
+    },
+
+    calcularHepaticoBilirrubinaIndirectaPorTotal: function() {
+        const totInput = document.getElementById('input_hep_bili_total');
+        const d = parseFloat(document.getElementById('input_hep_bili_directa')?.value);
+        const indInput = document.getElementById('input_hep_bili_indirecta');
+
+        if (!totInput || !indInput) return;
+        const t = parseFloat(totInput.value);
+
+        if (!isNaN(t) && !isNaN(d)) {
+            const ind = t - d;
+            indInput.value = ind >= 0 ? ind.toFixed(2) : '0.00';
+        }
     }
 };

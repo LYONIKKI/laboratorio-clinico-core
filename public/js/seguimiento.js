@@ -207,7 +207,7 @@ function cerrarModalLectura() {
     document.getElementById("modalLecturaMedico").classList.add("hidden");
 }
 
-// 4. Reimpresión A4 oficial desde el portal médico
+// 4. Reimpresión A4 oficial individual por prueba desde el portal médico
 function imprimirReporteMedico(idCpt) {
     if (!datosOrdenActiva) return;
 
@@ -239,7 +239,8 @@ function imprimirReporteMedico(idCpt) {
         edad:        cab.edad,
         medico:      cab.medico,
         seguro:      cab.seguro,
-        responsable: examenObj.responsable || 'TECNÓLOGO DE TURNO'
+        responsable: examenObj.responsable || cab.responsable || 'TECNÓLOGO DE TURNO',
+        cargo_firma: (examenObj.cargo_firma && examenObj.cargo_firma !== 'undefined') ? examenObj.cargo_firma : (cab.cargo_firma || 'LABORATORIO CLÍNICO')
     };
 
     if (typeof ImpresionLaboratorio !== 'undefined' && typeof ImpresionLaboratorio.reporteA4 === 'function') {
@@ -248,3 +249,15 @@ function imprimirReporteMedico(idCpt) {
         alert("El módulo de impresión no está disponible.");
     }
 }
+
+// 5. Impresión de la ORDEN COMPLETA (Consolidado Multi-Firma)
+function imprimirTodoConsolidadoMedico() {
+    if (!datosOrdenActiva) return;
+
+    if (typeof ImpresionLaboratorio !== 'undefined' && typeof ImpresionLaboratorio.reporteA4Consolidado === 'function') {
+        ImpresionLaboratorio.reporteA4Consolidado(datosOrdenActiva.cabecera, datosOrdenActiva.examenes || []);
+    } else {
+        alert("El módulo de impresión consolidada no está disponible.");
+    }
+}
+

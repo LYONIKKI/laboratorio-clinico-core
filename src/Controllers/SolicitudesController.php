@@ -127,17 +127,49 @@ class SolicitudesController {
         $stmtCab = sqlsrv_query($conn, $sqlCab, [$idMovimiento]);
         $rowCab = ($stmtCab !== false) ? sqlsrv_fetch_array($stmtCab, SQLSRV_FETCH_ASSOC) : null;
 
-        // 2. BUSCAR EL RESPONSABLE QUE GUARDÓ
-        $sqlResp = "SELECT TOP 1 ISNULL(u.Nombres + ' ' + u.Apellidos, 'TECNÓLOGO DE TURNO') AS ResponsableDigitacion
-                    FROM dbo.LabResultadoDetalle LRD
-                    LEFT JOIN dbo.SegUsuarios u ON LRD.IdUsuario = u.IdUsuario
-                    WHERE LRD.IdMovimiento = ?";
+        // 2. EXTRAER EL IdUsuario GUARDADO EN SQL SERVER
+        $sqlResp = "SELECT TOP 1 IdUsuario 
+                    FROM dbo.LabResultadoDetalle WITH (NOLOCK)
+                    WHERE IdMovimiento = ? 
+                      AND IdUsuario IS NOT NULL 
+                      AND IdUsuario > 0
+                    ORDER BY FechaRegistro DESC";
         $stmtResp = sqlsrv_query($conn, $sqlResp, [$idMovimiento]);
-        $rowResp = ($stmtResp !== false) ? sqlsrv_fetch_array($stmtResp, SQLSRV_FETCH_ASSOC) : null;
+        $idUsuarioLab = null;
+        if ($stmtResp !== false && $rResp = sqlsrv_fetch_array($stmtResp, SQLSRV_FETCH_ASSOC)) {
+            $idUsuarioLab = intval($rResp['IdUsuario']);
+        }
 
-        if (session_status() === PHP_SESSION_NONE) { session_start(); }
-        $usuarioSesion = $_SESSION['user_name'] ?? $_SESSION['usuario'] ?? 'TECNÓLOGO DE TURNO';
+        // 3. RECUPERAR IDENTIDAD Y CARGO DESDE POSTGRESQL (db_auth -> usuarios_sigh)
+        $nombreFirma = 'TECNÓLOGO DE TURNO';
+        $cargoFirma  = 'LABORATORIO CLÍNICO';
 
+        if ($idUsuarioLab) {
+            try {
+                // Obtenemos la conexión PostgreSQL configurada en tu container
+                $connPg = $this->container->get('db_auth');
+
+                $sqlPg = "SELECT nombre, COALESCE(cargo, 'TECNÓLOGO MÉDICO') AS cargo 
+                          FROM usuarios_sigh 
+                          WHERE id = $1 
+                          LIMIT 1";
+
+                $resPg = pg_query_params($connPg, $sqlPg, [$idUsuarioLab]);
+
+                if ($resPg && $userPg = pg_fetch_assoc($resPg)) {
+                    $nombreFirma = trim($userPg['nombre']);
+                    $cargoFirma  = trim($userPg['cargo']);
+                } else {
+                    $nombreFirma = "USUARIO RESPONSABLE (#{$idUsuarioLab})";
+                }
+            } catch (\Throwable $e) {
+                error_log("Error al consultar usuarios_sigh en PostgreSQL: " . $e->getMessage());
+                if (session_status() === PHP_SESSION_NONE) { session_start(); }
+                $nombreFirma = $_SESSION['user_name'] ?? "USUARIO (#{$idUsuarioLab})";
+            }
+        }
+
+        
         $data = [
             'paciente'         => $rowCab ? trim($rowCab['NombrePaciente']) : 'PACIENTE SIGH',
             'dni'              => $rowCab ? trim($rowCab['DNI']) : '---',
@@ -149,7 +181,8 @@ class SolicitudesController {
             'servicio'         => $rowCab ? trim($rowCab['ProcedenciaServicio']) : 'CONSULTA EXTERNA',
             'medico'           => $rowCab ? trim($rowCab['MedicoSolicitante']) : 'POR ASIGNAR',
             'seguro'           => $rowCab ? trim($rowCab['TipoSeguro']) : 'PARTICULAR / PAGANTE',
-            'responsable'      => $rowResp ? trim($rowResp['ResponsableDigitacion']) : $usuarioSesion,
+            'responsable'      => $nombreFirma,      // <- Nombre desde Postgres
+            'cargo_firma'      => $cargoFirma,       // <- Cargo desde Postgres
             'idCuentaAtencion' => $rowCab ? intval($rowCab['IdCuentaAtencion']) : 0,
             'examenes'         => []
         ];
