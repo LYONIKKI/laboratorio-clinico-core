@@ -3,21 +3,25 @@ if (session_status() === PHP_SESSION_NONE) { session_start(); }
 $rol_actual = strtolower(trim($_SESSION['user_rol'] ?? 'tecnico_lab'));
 $es_admin   = in_array($rol_actual, ['admin_lab', 'admin', 'administrador']);
 $es_medico  = ($rol_actual === 'medico_lab');
+
+$uri_actual = $_SERVER['REQUEST_URI'] ?? '';
+
+function claseItemSidebar($ruta, $uri) {
+    $activo = (strpos($uri, '/' . $ruta) !== false);
+    if ($activo) {
+        return 'bg-neutral-800 text-white font-bold border-l-2 border-red-500 shadow-xs';
+    }
+    return 'text-gray-400 hover:bg-neutral-900 hover:text-gray-200 border-l-2 border-transparent';
+}
+
+function claseIconoSidebar($ruta, $uri, $colorActivo = 'text-red-400') {
+    $activo = (strpos($uri, '/' . $ruta) !== false);
+    return $activo ? $colorActivo : 'text-gray-500 group-hover:text-gray-300';
+}
 ?>
-<style>
-    .sidebar-bg-black { background-color: #000000 !important; }
-    .badge-plata-brillante {
-        background: linear-gradient(135deg, #718096 0%, #cbd5e1 35%, #ffffff 50%, #94a3b8 65%, #475569 100%) !important;
-        border: 1px solid rgba(255, 255, 255, 0.8) !important;
-        box-shadow: 0 0 10px rgba(203, 213, 225, 0.4) !important;
-    }
-    .avatar-plata-brillante {
-        background: linear-gradient(135deg, #718096 0%, #cbd5e1 35%, #ffffff 50%, #94a3b8 65%, #475569 100%) !important;
-        color: #0f172a !important;
-        font-weight: 800 !important;
-        border: 1px solid rgba(255, 255, 255, 0.9) !important;
-    }
-</style>
+
+<!-- CSS Desacoplado del Sidebar -->
+<link rel="stylesheet" href="/laboratorio/public/css/sidebar.css">
 
 <aside class="w-64 sidebar-bg-black text-gray-300 flex flex-col min-h-screen border-r border-neutral-800 select-none flex-shrink-0" style="min-width: 16rem; max-width: 16rem;">
     
@@ -36,22 +40,20 @@ $es_medico  = ($rol_actual === 'medico_lab');
     <nav class="flex-1 p-3 space-y-2 overflow-y-auto font-mono text-xs">
         
         <?php if (!$es_medico): ?>
-        <!-- SECCIÓN 1: PANEL Y ESTADÍSTICAS (NO MÉDICOS) -->
-        <details id="acc-lab-resumen" class="sidebar-accordion group/acc [&_summary::-webkit-details-marker]:hidden" <?= isLabGroupOpen(['panel']); ?>>
+        <details id="acc-lab-resumen" class="sidebar-accordion group/acc [&_summary::-webkit-details-marker]:hidden" open>
             <summary class="flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-slate-200 rounded-lg hover:bg-neutral-900 transition-colors">
                 <span>General y Métricas</span>
                 <i class="fa-solid fa-chevron-down text-[10px] transition-transform duration-200 group-open/acc:rotate-180 text-gray-500"></i>
             </summary>
             <div class="mt-1 pl-2 space-y-1">
-                <a href="/laboratorio/public/panel" class="flex items-center px-3 py-2 rounded-lg text-xs font-medium transition duration-150 group <?= setLabActive('panel'); ?>">
-                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-chart-pie <?= setLabIcon('panel'); ?>"></i></span>
+                <a href="/laboratorio/public/panel" class="flex items-center px-3 py-2 rounded-r-lg text-xs transition duration-150 group <?= claseItemSidebar('panel', $uri_actual); ?>">
+                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-chart-pie <?= claseIconoSidebar('panel', $uri_actual, 'text-red-400'); ?>"></i></span>
                     <span class="truncate">Estadísticas</span>
                 </a>
             </div>
         </details>
         <?php endif; ?>
 
-        <!-- SECCIÓN 2: GESTIÓN DE ANÁLISIS -->
         <details id="acc-lab-analisis" class="sidebar-accordion group/acc [&_summary::-webkit-details-marker]:hidden" open>
             <summary class="flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-slate-200 rounded-lg hover:bg-neutral-900 transition-colors">
                 <span>Gestión de Análisis</span>
@@ -59,38 +61,36 @@ $es_medico  = ($rol_actual === 'medico_lab');
             </summary>
             <div class="mt-1 pl-2 space-y-1">
                 <?php if (!$es_medico): ?>
-                <a href="/laboratorio/public/solicitudes" class="flex items-center px-3 py-2 rounded-lg text-xs font-medium transition duration-150 group <?= setLabActive('solicitudes'); ?>">
-                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-file-waveform <?= setLabIcon('solicitudes'); ?>"></i></span>
+                <a href="/laboratorio/public/solicitudes" class="flex items-center px-3 py-2 rounded-r-lg text-xs transition duration-150 group <?= claseItemSidebar('solicitudes', $uri_actual); ?>">
+                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-file-waveform <?= claseIconoSidebar('solicitudes', $uri_actual, 'text-red-400'); ?>"></i></span>
                     <span class="truncate">Solicitudes</span>
                 </a>
                 <?php endif; ?>
 
-                <!-- PERMITIDO PARA MÉDICOS Y TÉCNICOS -->
-                <a href="/laboratorio/public/muestras" class="flex items-center px-3 py-2 rounded-lg text-xs font-medium transition duration-150 group <?= setLabActive('muestras'); ?>">
-                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-vial <?= setLabIcon('muestras'); ?>"></i></span>
+                <a href="/laboratorio/public/muestras" class="flex items-center px-3 py-2 rounded-r-lg text-xs transition duration-150 group <?= claseItemSidebar('muestras', $uri_actual); ?>">
+                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-vial <?= claseIconoSidebar('muestras', $uri_actual, 'text-green-400'); ?>"></i></span>
                     <span class="truncate">Seguimiento Muestras</span>
                 </a>
 
                 <?php if (!$es_medico): ?>
-                <a href="/laboratorio/public/resultados" class="flex items-center px-3 py-2 rounded-lg text-xs font-medium transition duration-150 group <?= setLabActive('resultados'); ?>">
-                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-vials <?= setLabIcon('resultados'); ?>"></i></span>
+                <a href="/laboratorio/public/resultados" class="flex items-center px-3 py-2 rounded-r-lg text-xs transition duration-150 group <?= claseItemSidebar('resultados', $uri_actual); ?>">
+                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-vials <?= claseIconoSidebar('resultados', $uri_actual, 'text-blue-400'); ?>"></i></span>
                     <span class="truncate">Resultados</span>
                 </a>
                 <?php endif; ?>
             </div>
         </details>
 
-        <!-- SECCIÓN 3: ADMINISTRACIÓN DEL SISTEMA (SOLO ADMIN_LAB / ADMIN) -->
         <?php if ($es_admin): ?>
-        <details id="acc-lab-admin" class="sidebar-accordion group/acc [&_summary::-webkit-details-marker]:hidden" <?= isLabGroupOpen(['usuarios']); ?>>
+        <details id="acc-lab-admin" class="sidebar-accordion group/acc [&_summary::-webkit-details-marker]:hidden" open>
             <summary class="flex items-center justify-between px-3 py-2 text-xs font-semibold text-amber-500 uppercase tracking-wider cursor-pointer hover:text-amber-300 rounded-lg hover:bg-neutral-900 transition-colors">
                 <span>Administración</span>
                 <i class="fa-solid fa-chevron-down text-[10px] transition-transform duration-200 group-open/acc:rotate-180 text-gray-500"></i>
             </summary>
             <div class="mt-1 pl-2 space-y-1">
-                <a href="/laboratorio/public/usuarios" class="flex items-center px-3 py-2 rounded-lg text-xs font-medium transition duration-150 group <?= setLabActive('usuarios'); ?>">
-                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-users-gear text-amber-400"></i></span>
-                    <span class="truncate text-amber-200 font-bold">Gestión de Usuarios</span>
+                <a href="/laboratorio/public/usuarios" class="flex items-center px-3 py-2 rounded-r-lg text-xs transition duration-150 group <?= claseItemSidebar('usuarios', $uri_actual); ?>">
+                    <span class="w-6 text-center flex-shrink-0"><i class="fa-solid fa-users-gear <?= claseIconoSidebar('usuarios', $uri_actual, 'text-amber-400'); ?>"></i></span>
+                    <span class="truncate text-amber-200">Gestión de Usuarios</span>
                 </a>
             </div>
         </details>
@@ -100,9 +100,9 @@ $es_medico  = ($rol_actual === 'medico_lab');
 
     <!-- FOOTER PERFIL -->
     <div class="p-3 bg-black border-t border-neutral-800 flex items-center justify-between">
-        <div class="flex items-center min-w-0 flex-1 mr-2">
+        <div class="flex items-center min-w-0 flex-1 mr-1">
             <div class="avatar-plata-brillante w-8 h-8 rounded-full flex items-center justify-center text-[11px] uppercase flex-shrink-0 mr-2.5">
-                <?= isset($_SESSION['user_name']) ? substr($_SESSION['user_name'], 0, 2) : 'TE'; ?>
+                <?= isset($_SESSION['user_name']) ? strtoupper(substr($_SESSION['user_name'], 0, 2)) : 'US'; ?>
             </div>
             <div class="min-w-0 flex-1">
                 <p class="text-xs font-semibold text-white truncate leading-none mb-1">
@@ -113,8 +113,22 @@ $es_medico  = ($rol_actual === 'medico_lab');
                 </p>
             </div>
         </div>
-        <a href="../../logout.php" class="text-gray-500 hover:text-slate-200 p-1.5 transition flex-shrink-0" title="Cerrar Sesión Central">
-            <i class="fa-solid fa-power-off text-sm"></i>
-        </a>
+        
+        <div class="flex items-center space-x-1 flex-shrink-0">
+            <button type="button" onclick="abrirModalCambioPassword()" 
+                    class="text-gray-400 hover:text-amber-400 p-1.5 rounded-lg hover:bg-neutral-900 transition cursor-pointer focus:outline-none" 
+                    title="Cambiar Mi Contraseña">
+                <i class="fa-solid fa-key text-xs"></i>
+            </button>
+
+            <a href="../../logout.php" 
+               class="text-gray-400 hover:text-red-400 p-1.5 rounded-lg hover:bg-neutral-900 transition" 
+               title="Cerrar Sesión Central">
+                <i class="fa-solid fa-power-off text-xs"></i>
+            </a>
+        </div>
     </div>
 </aside>
+
+<!-- JS Desacoplado del Sidebar -->
+<script src="/laboratorio/public/js/sidebar.js?v=3"></script>

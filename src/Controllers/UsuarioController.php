@@ -180,4 +180,52 @@ class UsuarioController {
         $response->getBody()->write(json_encode(['status' => 'success', 'message' => 'Usuario eliminado correctamente del sistema.']));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
+
+    // 7. API: CAMBIAR CONTRASEÑA PROPIA (CUALQUIER ROL LOGUEADO)
+    public function cambiarMiPassword(Request $request, Response $response) {
+        if (session_status() === PHP_SESSION_NONE) { session_start(); }
+
+        $idSesion = intval($_SESSION['user_id'] ?? 0);
+        if ($idSesion <= 0) {
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'Sesión no válida o expirada.']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
+        }
+
+        $pg = $this->container->get('db_auth');
+        $body = $request->getParsedBody() ?? json_decode(file_get_contents('php://input'), true) ?? [];
+
+        $passActual = trim($body['pass_actual'] ?? '');
+        $passNueva  = trim($body['pass_nueva'] ?? '');
+
+        if (empty($passActual) || empty($passNueva)) {
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'Completa todos los campos.']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        if (strlen($passNueva) < 4) {
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'La nueva contraseña debe tener mínimo 4 caracteres.']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        // Validar contraseña actual en PostgreSQL
+        $resCheck = pg_query_params($pg, "SELECT password FROM public.usuarios_sigh WHERE id = $1 LIMIT 1", [$idSesion]);
+        $row = ($resCheck) ? pg_fetch_assoc($resCheck) : null;
+
+        if (!$row || trim($row['password']) !== $passActual) {
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'La contraseña actual es incorrecta.']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        // Actualizar nueva contraseña
+        $resUpdate = pg_query_params($pg, "UPDATE public.usuarios_sigh SET password = $1 WHERE id = $2", [$passNueva, $idSesion]);
+
+        if (!$resUpdate) {
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'Error al actualizar la contraseña en PostgreSQL.']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+
+        $response->getBody()->write(json_encode(['status' => 'success', 'message' => 'Tu contraseña ha sido actualizada correctamente.']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
+    }
+
 }

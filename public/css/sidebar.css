@@ -1,0 +1,17 @@
+/* public/css/sidebar.css */
+.sidebar-bg-black {
+    background-color: #000000 !important;
+}
+
+.badge-plata-brillante {
+    background: linear-gradient(135deg, #718096 0%, #cbd5e1 35%, #ffffff 50%, #94a3b8 65%, #475569 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    box-shadow: 0 0 10px rgba(203, 213, 225, 0.4) !important;
+}
+
+.avatar-plata-brillante {
+    background: linear-gradient(135deg, #718096 0%, #cbd5e1 35%, #ffffff 50%, #94a3b8 65%, #475569 100%) !important;
+    color: #0f172a !important;
+    font-weight: 800 !important;
+    border: 1px solid rgba(255, 255, 255, 0.9) !important;
+}

@@ -127,6 +127,9 @@ $app->post('/api/usuarios/crear', 'UsuarioController:crearUsuario')->add($acl($r
 $app->post('/api/usuarios/actualizar', 'UsuarioController:actualizarUsuario')->add($acl($rolesAdmin));
 $app->post('/api/usuarios/cambiar-estado', 'UsuarioController:conmutarEstado')->add($acl($rolesAdmin));
 $app->post('/api/usuarios/eliminar', 'UsuarioController:eliminarUsuario')->add($acl($rolesAdmin));
+// Ruta abierta a todos los roles autenticados del laboratorio
+$app->post('/api/usuarios/cambiar-mi-password', 'UsuarioController:cambiarMiPassword')->add($acl($rolesLab));
+
 // Ejecución única de Slim
 
 // Rutas exclusivas para cada tipo de reporte
