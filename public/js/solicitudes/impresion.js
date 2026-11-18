@@ -22,7 +22,6 @@ const ImpresionLaboratorio = {
                     <div class="paciente">${paciente}</div>
                     <div class="info">DNI: ${dni} | HC: ${hc}</div>
                     <svg id="barcode"></svg>
-                    <!-- Script local offline con fallback a CDN -->
                     <script src="/laboratorio/public/js/JsBarcode.all.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js';"><\/script>
                     <script>
                         window.onload = function() {
@@ -38,14 +37,23 @@ const ImpresionLaboratorio = {
         ventana.document.close();
     },
 
-    // 2. Reporte A4 Oficial con Logos Hospitalarios y Firma de Responsable
+    // 2. Reporte A4 Oficial con Logos Hospitalarios, Fecha de Resultado y Pie de Impresión
     reporteA4: function(idMovimiento, infoBase, resultadosHTML, examenMaestro) {
         const ahora = new Date();
-        const fechaString = ahora.toLocaleDateString('es-PE');
-        const horaString = ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        const fechaHoy = ahora.toLocaleDateString('es-PE');
+        const horaHoy  = ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
 
-        const nombreResponsable = (infoBase.responsable || 'TECNÓLOGO DE TURNO').toUpperCase();
-        const cargoResponsable  = (infoBase.cargo_firma || 'LABORATORIO CLÍNICO').toUpperCase();
+        // Arriba: Fecha en que se guardó el resultado en BD; si aún no se guarda, la fecha actual
+        const fechaFicha = (infoBase.fecha_resultado && infoBase.fecha_resultado.trim() !== '') 
+            ? infoBase.fecha_resultado.trim() 
+            : fechaHoy;
+
+        const nombreResponsable = (infoBase.responsable && infoBase.responsable !== 'undefined') 
+            ? infoBase.responsable.toUpperCase() 
+            : 'TECNÓLOGO DE TURNO';
+        const cargoResponsable  = (infoBase.cargo_firma && infoBase.cargo_firma !== 'undefined') 
+            ? infoBase.cargo_firma.toUpperCase() 
+            : 'LABORATORIO CLÍNICO';
         const medicoSolicitante = (infoBase.medico || 'POR ASIGNAR').toUpperCase();
 
         const ventana = window.open('', '_blank', 'width=850,height=700');
@@ -99,8 +107,8 @@ const ImpresionLaboratorio = {
                     <tr>
                         <td class="lbl-clinico" style="width: 140px;">Paciente:</td>
                         <td><span class="linea-puntos">${infoBase.paciente || '---'}</span></td>
-                        <td class="lbl-clinico" style="width: 100px;">Seguro:</td>
-                        <td style="width: 160px;"><span class="linea-puntos">${infoBase.seguro || 'SIS'}</span></td>
+                        <td class="lbl-clinico" style="width: 110px;">Seguro:</td>
+                        <td style="width: 185px;"><span class="linea-puntos">${infoBase.seguro || 'SIS'}</span></td>
                     </tr>
                     <tr style="height: 6px;"></tr>
                     <tr>
@@ -113,8 +121,8 @@ const ImpresionLaboratorio = {
                     <tr>
                         <td class="lbl-clinico">Servicio / Cama:</td>
                         <td><span class="linea-puntos">${infoBase.servicio || 'CONSULTA EXTERNA'} / ${infoBase.cama || '---'}</span></td>
-                        <td class="lbl-clinico">Edad / Fecha:</td>
-                        <td><span class="linea-puntos">${infoBase.edad || '---'} AÑOS / ${fechaString}</span></td>
+                        <td class="lbl-clinico">Edad / F. Res.:</td>
+                        <td><span class="linea-puntos">${infoBase.edad || '---'} AÑOS / ${fechaFicha}</span></td>
                     </tr>
                     <tr style="height: 6px;"></tr>
                     <tr>
@@ -139,17 +147,17 @@ const ImpresionLaboratorio = {
                 <table style="width: 100%; text-align: center; font-size: 12px; font-family: Arial, sans-serif;">
                     <tr>
                         <td style="width: 50%; vertical-align: bottom;">
-                            <div style="display: inline-block; width: 280px; border-top: 1px solid #000; padding-top: 5px; text-align: center; font-family: monospace;">
-                                <b style="font-size: 11px; display: block; text-transform: uppercase;">${nombreResponsable}</b>
-                                <span style="font-size: 10px; color: #334155; display: block; font-weight: bold; text-transform: uppercase;">${cargoResponsable}</span>
-                                <span style="font-size: 9px; color: #64748b; display: block;">Firma y Sello del Responsable</span>
+                            <div style="display: inline-block; width: 250px; border-top: 1px solid #000; padding-top: 5px; text-align: center; font-family: monospace;">
+                                <b style="font-size: 11px; display: block;">Cerro de Pasco, ${fechaHoy} ${horaHoy}</b>
+                                <span style="font-size: 10px; color: #334155; display: block; font-weight: bold;">FECHA Y HORA DE IMPRESIÓN</span>
+                                <span style="font-size: 9px; color: #64748b; display: block;">Emisión de Copia Clínica</span>
                             </div>
                         </td>
                         
                         <td style="width: 50%; vertical-align: bottom;">
                             <div style="display: inline-block; width: 280px; border-top: 1px solid #000; padding-top: 5px; text-align: center; font-family: monospace;">
-                                <b style="font-size: 11px; display: block; text-transform: uppercase;">${infoBase.responsable}</b>
-                                <span style="font-size: 10px; color: #334155; display: block; font-weight: bold; text-transform: uppercase;">${infoBase.cargo_firma}</span>
+                                <b style="font-size: 11px; display: block; text-transform: uppercase;">${nombreResponsable}</b>
+                                <span style="font-size: 10px; color: #334155; display: block; font-weight: bold; text-transform: uppercase;">${cargoResponsable}</span>
                                 <span style="font-size: 9px; color: #64748b; display: block;">Firma y Sello del Responsable</span>
                             </div>
                         </td>
@@ -161,21 +169,23 @@ const ImpresionLaboratorio = {
         ventana.document.close();
     },
 
-    // 3. Reporte A4 Oficial CONSOLIDADO (Imprime todos los exámenes de la orden con sus firmas)
+    // 3. Reporte A4 Oficial CONSOLIDADO
     reporteA4Consolidado: function(cabecera, examenes) {
         const ahora = new Date();
-        const fechaString = ahora.toLocaleDateString('es-PE');
-        const horaString = ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        const fechaHoy = ahora.toLocaleDateString('es-PE');
+        const horaHoy  = ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
         const medicoSolicitante = (cabecera.medico || 'POR ASIGNAR').toUpperCase();
 
-        // 1. Construir las tablas de exámenes completados
+        const fechaFicha = (cabecera.fecha_resultado && cabecera.fecha_resultado.trim() !== '') 
+            ? cabecera.fecha_resultado.trim() 
+            : fechaHoy;
+
         let tablasHTML = '';
         const firmantesMap = {};
 
         examenes.forEach(ex => {
             if (!ex.analitos || ex.analitos.length === 0 || !ex.tieneResultado) return;
 
-            // Registrar firmante
             const resp = (ex.responsable || 'TECNÓLOGO DE TURNO').toUpperCase();
             const cargo = (ex.cargo_firma && ex.cargo_firma !== 'undefined') ? ex.cargo_firma.toUpperCase() : 'LABORATORIO CLÍNICO';
             firmantesMap[resp] = cargo;
@@ -213,10 +223,9 @@ const ImpresionLaboratorio = {
             return;
         }
 
-        // 2. Construir bloques de firmas (1, 2 o más profesionales)
         const listaFirmas = Object.entries(firmantesMap);
         let firmasHTML = '';
-        const anchoTd = listaFirmas.length > 1 ? `${Math.floor(100 / Math.min(listaFirmas.length, 3))}%` : '50%';
+        const anchoTd = listaFirmas.length > 1 ? `${Math.floor(70 / Math.min(listaFirmas.length, 3))}%` : '50%';
 
         listaFirmas.forEach(([nombre, cargo]) => {
             firmasHTML += `
@@ -277,8 +286,8 @@ const ImpresionLaboratorio = {
                     <tr>
                         <td class="lbl-clinico" style="width: 140px;">Paciente:</td>
                         <td><span class="linea-puntos">${cabecera.paciente || '---'}</span></td>
-                        <td class="lbl-clinico" style="width: 100px;">Seguro:</td>
-                        <td style="width: 160px;"><span class="linea-puntos">${cabecera.seguro || 'SIS'}</span></td>
+                        <td class="lbl-clinico" style="width: 110px;">Seguro:</td>
+                        <td style="width: 185px;"><span class="linea-puntos">${cabecera.seguro || 'SIS'}</span></td>
                     </tr>
                     <tr style="height: 5px;"></tr>
                     <tr>
@@ -291,8 +300,8 @@ const ImpresionLaboratorio = {
                     <tr>
                         <td class="lbl-clinico">Servicio / Cama:</td>
                         <td><span class="linea-puntos">${cabecera.servicio || 'CONSULTA EXTERNA'} / ${cabecera.cama || '---'}</span></td>
-                        <td class="lbl-clinico">Edad / Fecha:</td>
-                        <td><span class="linea-puntos">${cabecera.edad || '---'} AÑOS / ${fechaString}</span></td>
+                        <td class="lbl-clinico">Edad / F. Res.:</td>
+                        <td><span class="linea-puntos">${cabecera.edad || '---'} AÑOS / ${fechaFicha}</span></td>
                     </tr>
                     <tr style="height: 5px;"></tr>
                     <tr>
@@ -308,10 +317,11 @@ const ImpresionLaboratorio = {
                 <table style="width: 100%; text-align: center; font-size: 11px; font-family: Arial, sans-serif;">
                     <tr>
                         <td style="width: 30%; vertical-align: bottom;">
-                            <span style="font-size: 10.5px;">Cerro de Pasco, ${fechaString} ${horaString}</span><br><br>
-                            <span style="display: inline-block; width: 190px; border-top: 1px solid #000; padding-top: 4px;">
-                                <strong>LUGAR Y FECHA DE EMISIÓN</strong>
-                            </span>
+                            <div style="display: inline-block; width: 210px; border-top: 1px solid #000; padding-top: 4px; text-align: center; font-family: monospace;">
+                                <b style="font-size: 10.5px; display: block;">Cerro de Pasco, ${fechaHoy} ${horaHoy}</b>
+                                <span style="font-size: 9.5px; color: #334155; display: block; font-weight: bold;">FECHA Y HORA DE IMPRESIÓN</span>
+                                <span style="font-size: 8.5px; color: #64748b; display: block;">Emisión de Copia Clínica</span>
+                            </div>
                         </td>
                         ${firmasHTML}
                     </tr>

@@ -1,0 +1,39 @@
+/* public/css/auditoria_lab.css */
+
+/* Tarjeta bloqueada (otro colega validó la prueba) */
+.card-examen-bloqueado {
+    background-color: #fffbeb !important;
+    border: 1px solid #f59e0b !important;
+}
+
+/* Botón Solo Lectura (Ámbar / Naranja institucional) */
+.btn-examen-bloqueado {
+    background-color: #d97706 !important;
+    color: #ffffff !important;
+    border: 1px solid #b45309 !important;
+}
+
+.btn-examen-bloqueado:hover {
+    background-color: #b45309 !important;
+    color: #ffffff !important;
+}
+
+/* Texto de autoría bloqueada */
+.texto-autor-bloqueado {
+    color: #b45309 !important;
+}
+
+.icono-autor-bloqueado {
+    color: #d97706 !important;
+}
+
+/* Banner de advertencia dentro del modal de digitación */
+.banner-solo-lectura {
+    background-color: #fef3c7 !important;
+    border: 1px solid #f59e0b !important;
+    color: #78350f !important;
+}
+
+.banner-solo-lectura i {
+    color: #d97706 !important;
+}

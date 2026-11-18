@@ -169,7 +169,7 @@ class SeguimientoController {
         $stmtCab = sqlsrv_query($conn, $sqlCab, [$idMovimiento]);
         $cabecera = ($stmtCab !== false) ? sqlsrv_fetch_array($stmtCab, SQLSRV_FETCH_ASSOC) : null;
 
-        // 2. Extraer analitos con su IdUsuario respectivo
+        // 2. Extraer analitos con su IdUsuario y FechaRegistro
         $sqlResultados = "SELECT 
                             lrd.IdResultadoDetalle,
                             lrd.IdMovimiento,
@@ -180,7 +180,8 @@ class SeguimientoController {
                             ISNULL(NULLIF(lrd.ValorReferencial, 'N/A'), ISNULL(pr.ValorReferencial, 'N/A')) AS Referencial,
                             ISNULL(pr.Metodo, 'Automatizado') AS Metodo,
                             ISNULL(lrd.Observaciones, '') AS Observaciones,
-                            lrd.IdUsuario
+                            lrd.IdUsuario,
+                            CONVERT(VARCHAR(10), lrd.FechaRegistro, 103) + ' ' + CONVERT(VARCHAR(5), lrd.FechaRegistro, 108) AS FechaRegistroFmt
                           FROM dbo.LabResultadoDetalle lrd
                           LEFT JOIN dbo.FactCatalogoServicios cat 
                               ON lrd.IdProductoCPT = cat.IdProducto
@@ -194,7 +195,9 @@ class SeguimientoController {
         
         $mapaAnalitosPorCpt = [];
         $mapaUsuarioPorCpt  = [];
+        $mapaFechaPorCpt    = [];
         $analitosVistos     = [];
+        $ultimaFechaOrden   = '';
 
         if ($stmtRes !== false) {
             while ($rowA = sqlsrv_fetch_array($stmtRes, SQLSRV_FETCH_ASSOC)) {
@@ -209,6 +212,10 @@ class SeguimientoController {
 
                 if (!empty($rowA['IdUsuario'])) {
                     $mapaUsuarioPorCpt[$cptItem] = intval($rowA['IdUsuario']);
+                }
+                if (!empty($rowA['FechaRegistroFmt'])) {
+                    $mapaFechaPorCpt[$cptItem] = trim($rowA['FechaRegistroFmt']);
+                    $ultimaFechaOrden = trim($rowA['FechaRegistroFmt']);
                 }
 
                 if (!isset($mapaAnalitosPorCpt[$cptItem])) {
@@ -283,12 +290,13 @@ class SeguimientoController {
                 }
 
                 $examenes[] = [
-                    'idProductoCPT'  => $cptId,
-                    'examen'         => $nombreEx,
-                    'analitos'       => $analitosDelExamen,
-                    'tieneResultado' => $tieneResultados,
-                    'responsable'    => $nombreResp,
-                    'cargo_firma'    => $cargoResp
+                    'idProductoCPT'   => $cptId,
+                    'examen'          => $nombreEx,
+                    'analitos'        => $analitosDelExamen,
+                    'tieneResultado'  => $tieneResultados,
+                    'responsable'     => $nombreResp,
+                    'cargo_firma'     => $cargoResp,
+                    'fecha_resultado' => $mapaFechaPorCpt[$cptId] ?? ''
                 ];
             }
         }
@@ -297,20 +305,21 @@ class SeguimientoController {
 
         $data = [
             'cabecera' => [
-                'idMovimiento' => $idMovimiento,
-                'idAtencion'   => $cabecera['IdAtencion'] ?? 0,
-                'cuenta'       => $cabecera['IdCuentaAtencion'] ?? 0,
-                'paciente'     => $cabecera['NombrePaciente'] ?? 'PACIENTE SIGH',
-                'dni'          => $cabecera['DNI'] ?? '---',
-                'hc'           => $cabecera['HC'] ?? '---',
-                'edad'         => $cabecera['Edad'] ?? '---',
-                'cama'         => $cabecera['Cama'] ?? '---',
-                'diagnostico'  => $cabecera['Diagnostico'] ?? '---',
-                'medico'       => $cabecera['Medico'] ?? 'POR ASIGNAR',
-                'servicio'     => $cabecera['Servicio'] ?? 'CONSULTA EXTERNA',
-                'seguro'       => $cabecera['Seguro'] ?? 'SIS',
-                'responsable'  => $primerResp ? $primerResp['nombre'] : 'TECNÓLOGO DE TURNO',
-                'cargo_firma'  => $primerResp ? $primerResp['cargo'] : 'LABORATORIO CLÍNICO'
+                'idMovimiento'    => $idMovimiento,
+                'idAtencion'      => $cabecera['IdAtencion'] ?? 0,
+                'cuenta'          => $cabecera['IdCuentaAtencion'] ?? 0,
+                'paciente'        => $cabecera['NombrePaciente'] ?? 'PACIENTE SIGH',
+                'dni'             => $cabecera['DNI'] ?? '---',
+                'hc'              => $cabecera['HC'] ?? '---',
+                'edad'            => $cabecera['Edad'] ?? '---',
+                'cama'            => $cabecera['Cama'] ?? '---',
+                'diagnostico'     => $cabecera['Diagnostico'] ?? '---',
+                'medico'          => $cabecera['Medico'] ?? 'POR ASIGNAR',
+                'servicio'        => $cabecera['Servicio'] ?? 'CONSULTA EXTERNA',
+                'seguro'          => $cabecera['Seguro'] ?? 'SIS',
+                'responsable'     => $primerResp ? $primerResp['nombre'] : 'TECNÓLOGO DE TURNO',
+                'cargo_firma'     => $primerResp ? $primerResp['cargo'] : 'LABORATORIO CLÍNICO',
+                'fecha_resultado' => $ultimaFechaOrden
             ],
             'examenes' => $examenes
         ];
@@ -318,5 +327,4 @@ class SeguimientoController {
         $response->getBody()->write(json_encode(['status' => 'success', 'data' => $data]));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
-
 }

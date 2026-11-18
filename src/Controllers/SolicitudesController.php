@@ -88,7 +88,7 @@ class SolicitudesController {
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
 
-    // API: Detalle de analitos de la orden con seguro dinámico según IdCuentaAtencion
+    // API: Detalle de analitos de la orden con bloqueo por autoría y trazabilidad
     public function detalleExamenesOrden(Request $request, Response $response) {
         $conn = $this->container->get('db');
         $params = $request->getQueryParams();
@@ -98,6 +98,11 @@ class SolicitudesController {
             $response->getBody()->write(json_encode(['error' => 'ID inválido']));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
         }
+
+        if (session_status() === PHP_SESSION_NONE) { session_start(); }
+        $idUsuarioSesion = intval($_SESSION['user_id'] ?? 0);
+        $rolSesion       = strtolower(trim($_SESSION['user_rol'] ?? ''));
+        $esAdmin         = in_array($rolSesion, ['admin', 'administrador', 'admin_lab']);
 
         // 1. OBTENER CABECERA DEL PACIENTE CON FUENTE DE FINANCIAMIENTO REAL (SIGH)
         $sqlCab = "SELECT TOP 1
@@ -113,7 +118,6 @@ class SolicitudesController {
                         ISNULL(NULLIF(RTRIM(P.NroHistoriaClinica), ''), '---') AS HC,
                         ISNULL(DATEDIFF(YEAR, P.FechaNacimiento, GETDATE()), 0) AS Edad,
                         UPPER(ISNULL(LML.EstadoEntrega, 'PENDIENTE')) AS EstadoEntrega,
-                        -- Seguro real desde FuentesFinanciamiento
                         UPPER(ISNULL(NULLIF(RTRIM(F.Descripcion), ''), 'PARTICULAR / PAGANTE')) AS TipoSeguro
                    FROM dbo.LabMovimiento L
                    INNER JOIN dbo.LabMovimientoLaboratorio LML ON L.IdMovimiento = LML.IdMovimiento
@@ -127,78 +131,84 @@ class SolicitudesController {
         $stmtCab = sqlsrv_query($conn, $sqlCab, [$idMovimiento]);
         $rowCab = ($stmtCab !== false) ? sqlsrv_fetch_array($stmtCab, SQLSRV_FETCH_ASSOC) : null;
 
-        // 2. EXTRAER EL IdUsuario GUARDADO EN SQL SERVER
-        $sqlResp = "SELECT TOP 1 IdUsuario 
-                    FROM dbo.LabResultadoDetalle WITH (NOLOCK)
-                    WHERE IdMovimiento = ? 
-                      AND IdUsuario IS NOT NULL 
-                      AND IdUsuario > 0
-                    ORDER BY FechaRegistro DESC";
-        $stmtResp = sqlsrv_query($conn, $sqlResp, [$idMovimiento]);
-        $idUsuarioLab = null;
-        if ($stmtResp !== false && $rResp = sqlsrv_fetch_array($stmtResp, SQLSRV_FETCH_ASSOC)) {
-            $idUsuarioLab = intval($rResp['IdUsuario']);
+        // 2. OBTENER CATÁLOGO DE USUARIOS DE POSTGRESQL EN MEMORIA
+        $usuariosPg = [];
+        try {
+            $connPg = $this->container->get('db_auth');
+            $resPg = pg_query($connPg, "SELECT id, nombre, COALESCE(cargo, 'TECNÓLOGO MÉDICO') AS cargo FROM usuarios_sigh");
+            if ($resPg) {
+                while ($u = pg_fetch_assoc($resPg)) {
+                    $usuariosPg[intval($u['id'])] = [
+                        'nombre' => trim($u['nombre']),
+                        'cargo'  => trim($u['cargo'])
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log("Error al consultar usuarios_sigh en PostgreSQL: " . $e->getMessage());
         }
 
-        // 3. RECUPERAR IDENTIDAD Y CARGO DESDE POSTGRESQL (db_auth -> usuarios_sigh)
-        $nombreFirma = 'TECNÓLOGO DE TURNO';
-        $cargoFirma  = 'LABORATORIO CLÍNICO';
+        // 3. EXTRAER AUTOR Y FECHA POR CADA EXAMEN (CPT) GUARDADO EN SQL SERVER
+        $sqlAutores = "SELECT 
+                            IdProductoCPT,
+                            MAX(IdUsuario) AS IdUsuarioAutor,
+                            MAX(CONVERT(VARCHAR(10), FechaRegistro, 103) + ' ' + CONVERT(VARCHAR(5), FechaRegistro, 108)) AS FechaResultado
+                       FROM dbo.LabResultadoDetalle WITH (NOLOCK)
+                       WHERE IdMovimiento = ?
+                         AND ValorResultado IS NOT NULL 
+                         AND RTRIM(LTRIM(ValorResultado)) <> ''
+                       GROUP BY IdProductoCPT";
+        $stmtAut = sqlsrv_query($conn, $sqlAutores, [$idMovimiento]);
+        $mapaAutoresCpt = [];
+        $idUsuarioGeneral = null;
+        $fechaResultadoGeneral = '';
 
-        if ($idUsuarioLab) {
-            try {
-                // Obtenemos la conexión PostgreSQL configurada en tu container
-                $connPg = $this->container->get('db_auth');
+        if ($stmtAut !== false) {
+            while ($rA = sqlsrv_fetch_array($stmtAut, SQLSRV_FETCH_ASSOC)) {
+                $cptKey = intval($rA['IdProductoCPT']);
+                $idAut  = intval($rA['IdUsuarioAutor'] ?? 0);
+                $fRes   = trim($rA['FechaResultado'] ?? '');
 
-                $sqlPg = "SELECT nombre, COALESCE(cargo, 'TECNÓLOGO MÉDICO') AS cargo 
-                          FROM usuarios_sigh 
-                          WHERE id = $1 
-                          LIMIT 1";
-
-                $resPg = pg_query_params($connPg, $sqlPg, [$idUsuarioLab]);
-
-                if ($resPg && $userPg = pg_fetch_assoc($resPg)) {
-                    $nombreFirma = trim($userPg['nombre']);
-                    $cargoFirma  = trim($userPg['cargo']);
-                } else {
-                    $nombreFirma = "USUARIO RESPONSABLE (#{$idUsuarioLab})";
+                $mapaAutoresCpt[$cptKey] = [
+                    'idUsuario' => $idAut,
+                    'fecha'     => $fRes
+                ];
+                if ($idAut > 0) {
+                    $idUsuarioGeneral = $idAut;
+                    $fechaResultadoGeneral = $fRes;
                 }
-            } catch (\Throwable $e) {
-                error_log("Error al consultar usuarios_sigh en PostgreSQL: " . $e->getMessage());
-                if (session_status() === PHP_SESSION_NONE) { session_start(); }
-                $nombreFirma = $_SESSION['user_name'] ?? "USUARIO (#{$idUsuarioLab})";
             }
         }
 
-        
+        // Si aún no hay resultados guardados, usar el usuario en sesión
+        $idParaCabecera = $idUsuarioGeneral ?: $idUsuarioSesion;
+        $nombreFirma = $usuariosPg[$idParaCabecera]['nombre'] ?? ($_SESSION['user_name'] ?? 'TECNÓLOGO DE TURNO');
+        $cargoFirma  = $usuariosPg[$idParaCabecera]['cargo'] ?? 'LABORATORIO CLÍNICO';
+
         $data = [
             'paciente'         => $rowCab ? trim($rowCab['NombrePaciente']) : 'PACIENTE SIGH',
             'dni'              => $rowCab ? trim($rowCab['DNI']) : '---',
             'hc'               => $rowCab ? trim($rowCab['HC']) : '---',
             'fecha'            => ($rowCab && $rowCab['FechaRecepcion'] instanceof \DateTime) ? $rowCab['FechaRecepcion']->format('d/m/Y H:i') : '---',
+            'fecha_resultado'  => $fechaResultadoGeneral,
             'edad'             => ($rowCab && $rowCab['Edad'] > 0) ? $rowCab['Edad'] : '---',
             'cama'             => $rowCab ? trim($rowCab['NroCama']) : '---',
             'diagnostico'      => $rowCab ? trim($rowCab['Diagnostico']) : '---',
             'servicio'         => $rowCab ? trim($rowCab['ProcedenciaServicio']) : 'CONSULTA EXTERNA',
             'medico'           => $rowCab ? trim($rowCab['MedicoSolicitante']) : 'POR ASIGNAR',
             'seguro'           => $rowCab ? trim($rowCab['TipoSeguro']) : 'PARTICULAR / PAGANTE',
-            'responsable'      => $nombreFirma,      // <- Nombre desde Postgres
-            'cargo_firma'      => $cargoFirma,       // <- Cargo desde Postgres
+            'responsable'      => $nombreFirma,
+            'cargo_firma'      => $cargoFirma,
             'idCuentaAtencion' => $rowCab ? intval($rowCab['IdCuentaAtencion']) : 0,
             'examenes'         => []
         ];
 
-        // 3. EXÁMENES (CPT)
+        // 4. LISTAR EXÁMENES (CPT) CON PERMISO DE EDICIÓN POR AUTORÍA
         $sqlExamenes = "SELECT 
                             LCPT.idProductoCPT,
                             ISNULL(Cat.Nombre, 'EXAMEN CPT #' + CAST(LCPT.idProductoCPT AS VARCHAR(20))) AS Examen,
                             ISNULL(LCPT.cantidad, 1) AS Cantidad,
-                            ISNULL(LCPT.observaciones, '') AS Observacion,
-                            (SELECT COUNT(*) 
-                             FROM dbo.LabResultadoDetalle LRD 
-                             WHERE LRD.IdMovimiento = LCPT.idMovimiento 
-                               AND LRD.IdProductoCPT = LCPT.idProductoCPT 
-                               AND LRD.ValorResultado IS NOT NULL 
-                               AND RTRIM(LTRIM(LRD.ValorResultado)) <> '') AS TieneResultado
+                            ISNULL(LCPT.observaciones, '') AS Observacion
                         FROM dbo.LabMovimientoCPT LCPT
                         LEFT JOIN dbo.FactCatalogoServicios Cat ON LCPT.idProductoCPT = Cat.IdProducto
                         WHERE LCPT.idMovimiento = ?";
@@ -206,12 +216,36 @@ class SolicitudesController {
         $stmtEx = sqlsrv_query($conn, $sqlExamenes, [$idMovimiento]);
         if ($stmtEx !== false) {
             while ($rowE = sqlsrv_fetch_array($stmtEx, SQLSRV_FETCH_ASSOC)) {
+                $cptId = intval($rowE['idProductoCPT']);
+                $infoAutor = $mapaAutoresCpt[$cptId] ?? null;
+                $completado = ($infoAutor !== null);
+
+                $idAutorCpt = $infoAutor ? $infoAutor['idUsuario'] : 0;
+                $autorNombre = '';
+                $autorCargo  = '';
+                $fechaCpt    = $infoAutor ? $infoAutor['fecha'] : '';
+
+                if ($completado && $idAutorCpt > 0 && isset($usuariosPg[$idAutorCpt])) {
+                    $autorNombre = $usuariosPg[$idAutorCpt]['nombre'];
+                    $autorCargo  = $usuariosPg[$idAutorCpt]['cargo'];
+                } elseif ($completado && $idAutorCpt > 0) {
+                    $autorNombre = "USUARIO #{$idAutorCpt}";
+                    $autorCargo  = "LABORATORIO CLÍNICO";
+                }
+
+                // Regla de bloqueo: Editable si NO está completado, o si el usuario actual es el autor, o si es ADMIN
+                $puedeEditar = (!$completado || $idAutorCpt === 0 || $idAutorCpt === $idUsuarioSesion || $esAdmin);
+
                 $data['examenes'][] = [
-                    'idProductoCPT' => intval($rowE['idProductoCPT']),
-                    'Examen'        => trim($rowE['Examen']),
-                    'Cantidad'      => intval($rowE['Cantidad']),
-                    'Observacion'   => trim($rowE['Observacion']),
-                    'completado'    => (intval($rowE['TieneResultado'] ?? 0) > 0)
+                    'idProductoCPT'   => $cptId,
+                    'Examen'          => trim($rowE['Examen']),
+                    'Cantidad'        => intval($rowE['Cantidad']),
+                    'Observacion'     => trim($rowE['Observacion']),
+                    'completado'      => $completado,
+                    'puedeEditar'     => $puedeEditar,
+                    'autorNombre'     => $autorNombre,
+                    'autorCargo'      => $autorCargo,
+                    'fecha_resultado' => $fechaCpt
                 ];
             }
         }
@@ -242,9 +276,10 @@ class SolicitudesController {
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
 
-    // API: Guardar resultados digitados por analito en dbo.LabResultadoDetalle
+    // API: Guardar resultados digitados por analito en dbo.LabResultadoDetalle (Con Bloqueo por Autoría)
     public function guardarResultadoManual(Request $request, Response $response) {
         $conn = $this->container->get('db');
+        if (session_status() === PHP_SESSION_NONE) { session_start(); }
         
         $body = $request->getParsedBody();
         if (empty($body)) {
@@ -259,7 +294,18 @@ class SolicitudesController {
         $valorResultado   = trim($body['resultado'] ?? '');
         $valorReferencial = trim($body['referencial'] ?? 'NO REACTIVO');
         $observaciones    = trim($body['observaciones'] ?? '');
-        $idUsuario        = intval($_SESSION['user_id'] ?? 3135);
+        
+        $idUsuario = intval($_SESSION['user_id'] ?? 0);
+        $rolSesion = strtolower(trim($_SESSION['user_rol'] ?? ''));
+        $esAdmin   = in_array($rolSesion, ['admin', 'administrador', 'admin_lab']);
+
+        if ($idUsuario <= 0) {
+            $response->getBody()->write(json_encode([
+                'success' => false, 
+                'message' => 'Sesión expirada. Por favor vuelve a iniciar sesión.'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
+        }
 
         if ($idMovimiento <= 0 || empty($nombrePrueba)) {
             $response->getBody()->write(json_encode([
@@ -282,6 +328,38 @@ class SolicitudesController {
             $stmtP = sqlsrv_query($conn, $sqlCpt, [$idMovimiento]);
             if ($stmtP && $rP = sqlsrv_fetch_array($stmtP, SQLSRV_FETCH_ASSOC)) {
                 $idProductoCpt = intval($rP['idProductoCPT'] ?? 0);
+            }
+        }
+
+        // VALIDACIÓN ESTRICTA DE AUTORÍA: Si otro colega ya registró resultados en este CPT, bloquear edición (excepto Admin)
+        if (!$esAdmin) {
+            $sqlCheckAutor = "SELECT TOP 1 IdUsuario 
+                              FROM dbo.LabResultadoDetalle WITH (NOLOCK)
+                              WHERE IdMovimiento = ? 
+                                AND IdProductoCPT = ? 
+                                AND ValorResultado IS NOT NULL 
+                                AND RTRIM(LTRIM(ValorResultado)) <> ''
+                                AND IdUsuario IS NOT NULL 
+                                AND IdUsuario > 0";
+            $stmtCheck = sqlsrv_query($conn, $sqlCheckAutor, [$idMovimiento, $idProductoCpt]);
+            if ($stmtCheck && $rowAutor = sqlsrv_fetch_array($stmtCheck, SQLSRV_FETCH_ASSOC)) {
+                $idAutorExistente = intval($rowAutor['IdUsuario']);
+                if ($idAutorExistente !== $idUsuario) {
+                    $nombreColega = "otro profesional (#{$idAutorExistente})";
+                    try {
+                        $connPg = $this->container->get('db_auth');
+                        $resPg = pg_query_params($connPg, "SELECT nombre FROM usuarios_sigh WHERE id = $1 LIMIT 1", [$idAutorExistente]);
+                        if ($resPg && $uPg = pg_fetch_assoc($resPg)) {
+                            $nombreColega = trim($uPg['nombre']);
+                        }
+                    } catch (\Throwable $e) {}
+
+                    $response->getBody()->write(json_encode([
+                        'success' => false, 
+                        'message' => "Bloqueo de Seguridad: Este examen ya fue validado por {$nombreColega}. Solo el autor o un Administrador puede modificarlo."
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+                }
             }
         }
 
@@ -321,7 +399,7 @@ class SolicitudesController {
         $response->getBody()->write(json_encode(['success' => true]));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
-
+    
     public function obtenerPlantillaExamen(Request $request, Response $response) {
         $conn = $this->container->get('db');  
         $params = $request->getQueryParams();  

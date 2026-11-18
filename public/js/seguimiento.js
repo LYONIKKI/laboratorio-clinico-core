@@ -230,17 +230,18 @@ function imprimirReporteMedico(idCpt) {
     });
 
     const infoBase = {
-        paciente:    cab.paciente,
-        dni:         cab.dni,
-        hc:          cab.hc,
-        servicio:    cab.servicio,
-        cama:        cab.cama,
-        diagnostico: cab.diagnostico,
-        edad:        cab.edad,
-        medico:      cab.medico,
-        seguro:      cab.seguro,
-        responsable: examenObj.responsable || cab.responsable || 'TECNÓLOGO DE TURNO',
-        cargo_firma: (examenObj.cargo_firma && examenObj.cargo_firma !== 'undefined') ? examenObj.cargo_firma : (cab.cargo_firma || 'LABORATORIO CLÍNICO')
+        paciente:        cab.paciente,
+        dni:             cab.dni,
+        hc:              cab.hc,
+        servicio:        cab.servicio,
+        cama:            cab.cama,
+        diagnostico:     cab.diagnostico,
+        edad:            cab.edad,
+        medico:          cab.medico,
+        seguro:          cab.seguro,
+        responsable:     examenObj.responsable || cab.responsable || 'TECNÓLOGO DE TURNO',
+        cargo_firma:     (examenObj.cargo_firma && examenObj.cargo_firma !== 'undefined') ? examenObj.cargo_firma : (cab.cargo_firma || 'LABORATORIO CLÍNICO'),
+        fecha_resultado: examenObj.fecha_resultado || cab.fecha_resultado || ''
     };
 
     if (typeof ImpresionLaboratorio !== 'undefined' && typeof ImpresionLaboratorio.reporteA4 === 'function') {
@@ -249,6 +250,7 @@ function imprimirReporteMedico(idCpt) {
         alert("El módulo de impresión no está disponible.");
     }
 }
+
 
 // 5. Impresión de la ORDEN COMPLETA (Consolidado Multi-Firma)
 function imprimirTodoConsolidadoMedico() {

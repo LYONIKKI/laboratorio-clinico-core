@@ -383,7 +383,6 @@ document.addEventListener("DOMContentLoaded", () => {
 async function verExamenesOrden(idMovimiento) {
     idMovimientoActivo = idMovimiento;
 
-    // 1. Respaldo inmediato desde la memoria de la tabla
     const ordenMemoria = listaSolicitudesMemoria.find(r => parseInt(r.Nro_Movimiento) === parseInt(idMovimiento));
 
     document.getElementById('detIdMovimiento').value = idMovimiento;
@@ -395,14 +394,12 @@ async function verExamenesOrden(idMovimiento) {
     document.getElementById('detDiagnosticoInput').value = '---';
     document.getElementById('listaExamenesSolicitud').innerHTML = `<div class="p-6 text-center text-gray-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Obteniendo orden médica desde SIGH...</div>`;
     
-    // Abrir modal azul
     document.getElementById('modalDetalleSolicitud').classList.remove('hidden');
 
     try {
         const res = await fetch(`/laboratorio/public/api/solicitudes/detalle?id=${idMovimiento}`);
         const data = await res.json();
 
-        // 2. Asignación segura con la data del servidor (AHORA SÍ EXISTE data)
         document.getElementById('detPaciente').textContent = (data.paciente && data.paciente !== 'PACIENTE NO REGISTRADO') ? data.paciente : (ordenMemoria?.Nombre_Lab || 'PACIENTE SIGH');
         document.getElementById('detDni').textContent = (data.dni && data.dni !== '---') ? `DNI: ${data.dni}` : `DNI: ${ordenMemoria?.DNI || '---'}`;
         document.getElementById('detHcValue').value = (data.hc && data.hc !== '---') ? data.hc : (ordenMemoria?.HC || '---');
@@ -411,14 +408,15 @@ async function verExamenesOrden(idMovimiento) {
         if (document.getElementById('detCargoValue')) {
             document.getElementById('detCargoValue').value = data.cargo_firma || 'LABORATORIO CLÍNICO';
         }
+        if (document.getElementById('detFechaResultadoValue')) {
+            document.getElementById('detFechaResultadoValue').value = data.fecha_resultado || '';
+        }
         document.getElementById('detIdCuentaAtencion').value = data.idCuentaAtencion || 0;
         
-        // Seguro asignado dinámicamente según la cuenta de admisión
         if (document.getElementById('detSeguroValue')) {
             document.getElementById('detSeguroValue').value = data.seguro || 'PARTICULAR / PAGANTE';
         }
 
-        // Cargar inputs editables
         document.getElementById('detCamaInput').value = (data.cama && data.cama !== '---') ? data.cama : '';
         document.getElementById('detDiagnosticoInput').value = (data.diagnostico && data.diagnostico !== '---') ? data.diagnostico : '';
         document.getElementById('detProcedenciaInput').value = data.servicio || ordenMemoria?.Servicio_Procedencia || 'CONSULTA EXTERNA';
@@ -433,29 +431,56 @@ async function verExamenesOrden(idMovimiento) {
 
         data.examenes.forEach(ex => {
             const nombreSanitizado = (ex.Examen || '').replace(/'/g, "\\'");
-            const completado = (ex.completado === true);
+            const completado  = (ex.completado === true);
+            const puedeEditar = (ex.puedeEditar !== false);
+            const autorInfo   = ex.autorNombre ? `Validado por: ${ex.autorNombre}` : '';
 
-            const btnColor = completado 
-                ? "bg-green-600 hover:bg-green-700 text-white" 
-                : "bg-blue-600 hover:bg-blue-700 text-white";
+            const autorNombreEsc = (ex.autorNombre || data.responsable || 'TECNÓLOGO DE TURNO').replace(/"/g, '&quot;');
+            const autorCargoEsc  = (ex.autorCargo || data.cargo_firma || 'LABORATORIO CLÍNICO').replace(/"/g, '&quot;');
+            const fechaExEsc     = (ex.fecha_resultado || data.fecha_resultado || '').replace(/"/g, '&quot;');
 
-            const btnIcon = completado ? "fa-solid fa-circle-check" : "fa-solid fa-pen-to-square";
-            const btnTexto = completado ? "Completado" : "Digitar";
-            const borderCard = completado ? "border-green-300 bg-green-50" : "border-gray-200 bg-white";
+            let btnClass, btnIcon, btnTexto, cardClass, iconVialClass, autorTextClass;
+
+            if (!puedeEditar) {
+                btnClass       = "btn-examen-bloqueado";
+                btnIcon        = "fa-solid fa-lock";
+                btnTexto       = "Solo Lectura";
+                cardClass      = "card-examen-bloqueado";
+                iconVialClass  = "icono-autor-bloqueado";
+                autorTextClass = "texto-autor-bloqueado";
+            } else if (completado) {
+                btnClass       = "bg-green-600 hover:bg-green-700 text-white";
+                btnIcon        = "fa-solid fa-circle-check";
+                btnTexto       = "Completado";
+                cardClass      = "border-green-300 bg-green-50";
+                iconVialClass  = "text-green-600";
+                autorTextClass = "text-green-700";
+            } else {
+                btnClass       = "bg-blue-600 hover:bg-blue-700 text-white";
+                btnIcon        = "fa-solid fa-pen-to-square";
+                btnTexto       = "Digitar";
+                cardClass      = "border-gray-200 bg-white";
+                iconVialClass  = "text-blue-600";
+                autorTextClass = "text-gray-600";
+            }
 
             const itemDiv = document.createElement('div');
-            itemDiv.className = `border rounded-xl p-3 flex justify-between items-center shadow-sm text-xs font-mono transition ${borderCard}`;
+            itemDiv.className = `border rounded-xl p-3 flex justify-between items-center shadow-sm text-xs font-mono transition ${cardClass}`;
             itemDiv.innerHTML = `
-                <div>
+                <div class="pr-2">
                     <h5 class="font-bold text-gray-800 flex items-center">
-                        <i class="fa-solid fa-vial ${completado ? 'text-green-600' : 'text-blue-600'} mr-2"></i> ${ex.Examen}
+                        <i class="fa-solid fa-vial ${iconVialClass} mr-2"></i> ${ex.Examen}
                     </h5>
+                    ${autorInfo ? `<p class="text-[10px] font-bold ${autorTextClass} ml-5 mt-0.5"><i class="fa-solid fa-user-check mr-1"></i>${autorInfo}</p>` : ''}
                     ${ex.Observacion ? `<p class="text-[10px] text-gray-400 ml-5">${ex.Observacion}</p>` : ''}
                 </div>
-                <div class="flex items-center space-x-2">
-                    <button onclick="abrirDigitacionManual(${idMovimiento}, '${nombreSanitizado}', ${ex.idProductoCPT || 0})"
-                            class="px-3 py-1.5 rounded-lg font-bold text-xs ${btnColor} transition flex items-center space-x-1.5 shadow cursor-pointer"
-                            title="${completado ? 'Clic para editar el resultado' : 'Ingresar resultado'}">
+                <div class="flex items-center space-x-2 flex-shrink-0">
+                    <button onclick="abrirDigitacionManual(${idMovimiento}, '${nombreSanitizado}', ${ex.idProductoCPT || 0}, ${puedeEditar})"
+                            data-autor="${autorNombreEsc}"
+                            data-cargo="${autorCargoEsc}"
+                            data-fecha="${fechaExEsc}"
+                            class="px-3 py-1.5 rounded-lg font-bold text-xs ${btnClass} transition flex items-center space-x-1.5 shadow cursor-pointer"
+                            title="${!puedeEditar ? 'Bloqueado: Validado por otro colega (Solo lectura e impresión)' : (completado ? 'Clic para editar el resultado' : 'Ingresar resultado')}">
                         <i class="${btnIcon}"></i>
                         <span>${btnTexto}</span>
                     </button>
@@ -467,6 +492,7 @@ async function verExamenesOrden(idMovimiento) {
         document.getElementById('detPaciente').textContent = ordenMemoria?.Nombre_Lab || 'PACIENTE SIGH';
     }
 }
+
 
 async function guardarCabeceraClinica() {
     const idMovimiento = idMovimientoActivo || document.getElementById('detIdMovimiento')?.value;
@@ -522,16 +548,16 @@ function imprimirDesdeModalDigitacion() {
         hc = ordenMemoria?.HC || '---';
     }
 
-    const servicio    = document.getElementById('detProcedenciaInput')?.value?.trim() || ordenMemoria?.Servicio_Procedencia || 'CONSULTA EXTERNA';
-    const medico      = document.getElementById('detMedicoInput')?.value?.trim() || 'POR ASIGNAR';
-    const camaEditada = document.getElementById('detCamaInput')?.value?.trim() || '---';
-    const diagEditado = document.getElementById('detDiagnosticoInput')?.value?.trim() || '---';
-    const edad        = document.getElementById('detEdadValue')?.value?.trim() || '---';
-    const responsable = document.getElementById('detResponsableValue')?.value?.trim() || 'TECNÓLOGO DE TURNO';
-    const cargoFirma  = document.getElementById('detCargoValue')?.value?.trim() || 'LABORATORIO CLÍNICO';
-    const seguroReal  = document.getElementById('detSeguroValue')?.value || 'PARTICULAR / PAGANTE';
+    const servicio       = document.getElementById('detProcedenciaInput')?.value?.trim() || ordenMemoria?.Servicio_Procedencia || 'CONSULTA EXTERNA';
+    const medico         = document.getElementById('detMedicoInput')?.value?.trim() || 'POR ASIGNAR';
+    const camaEditada    = document.getElementById('detCamaInput')?.value?.trim() || '---';
+    const diagEditado    = document.getElementById('detDiagnosticoInput')?.value?.trim() || '---';
+    const edad           = document.getElementById('detEdadValue')?.value?.trim() || '---';
+    const responsable    = document.getElementById('detResponsableValue')?.value?.trim() || 'TECNÓLOGO DE TURNO';
+    const cargoFirma     = document.getElementById('detCargoValue')?.value?.trim() || 'LABORATORIO CLÍNICO';
+    const fechaResultado = document.getElementById('detFechaResultadoValue')?.value?.trim() || '';
+    const seguroReal     = document.getElementById('detSeguroValue')?.value || 'PARTICULAR / PAGANTE';
 
-    // Persistir cambios antes de imprimir
     guardarCabeceraClinica();
 
     let examenTitulo = document.getElementById('modalDigitacionLabel')?.textContent || 'EXAMEN DE LABORATORIO';
@@ -584,7 +610,8 @@ function imprimirDesdeModalDigitacion() {
         medico: medico,
         seguro: seguroReal,
         responsable: responsable,
-        cargo_firma: cargoFirma // <- AGREGAR AQUÍ
+        cargo_firma: cargoFirma,
+        fecha_resultado: fechaResultado
     };
 
     if (typeof ImpresionLaboratorio !== 'undefined' && typeof ImpresionLaboratorio.reporteA4 === 'function') {
@@ -599,14 +626,42 @@ function cerrarModalDetalle() { document.getElementById('modalDetalleSolicitud')
 // =========================================================================
 // 5. MODAL DE DIGITACIÓN MANUAL DINÁMICA
 // =========================================================================
-async function abrirDigitacionManual(idMovimiento, nombreExamen, idCpt) {
+async function abrirDigitacionManual(idMovimiento, nombreExamen, idCpt, puedeEditar = true) {
     const modal = document.getElementById('modalDigitacion');
     const modalBody = document.getElementById('modalDigitacionBody');
     const modalTitulo = document.getElementById('modalDigitacionLabel');
+    const btnGuardar = document.getElementById('btnGuardarResultadosManual');
 
     if (!modal || !modalBody) return;
 
-    modalTitulo.textContent = `DIGITACIÓN - ${nombreExamen} (#${idMovimiento})`;
+    const btnTrigger = event?.currentTarget;
+    if (btnTrigger) {
+        const autorEx = btnTrigger.getAttribute('data-autor');
+        const cargoEx = btnTrigger.getAttribute('data-cargo');
+        const fechaEx = btnTrigger.getAttribute('data-fecha');
+        if (autorEx && document.getElementById('detResponsableValue')) {
+            document.getElementById('detResponsableValue').value = autorEx;
+        }
+        if (cargoEx && document.getElementById('detCargoValue')) {
+            document.getElementById('detCargoValue').value = cargoEx;
+        }
+        if (fechaEx !== null && document.getElementById('detFechaResultadoValue')) {
+            document.getElementById('detFechaResultadoValue').value = fechaEx;
+        }
+    }
+
+    if (btnGuardar) {
+        if (puedeEditar) {
+            btnGuardar.classList.remove('hidden');
+        } else {
+            btnGuardar.classList.add('hidden');
+        }
+    }
+
+    modalTitulo.innerHTML = puedeEditar 
+        ? `<i class="fa-solid fa-pen-to-square mr-2"></i> DIGITACIÓN - ${nombreExamen} (#${idMovimiento})`
+        : `<i class="fa-solid fa-lock text-yellow-300 mr-2"></i> SOLO LECTURA - ${nombreExamen} (#${idMovimiento})`;
+
     modalBody.innerHTML = `<div class="p-8 text-center text-gray-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Construyendo plantilla analítica desde BD...</div>`;
     modal.classList.remove('hidden');
 
@@ -625,7 +680,6 @@ async function abrirDigitacionManual(idMovimiento, nombreExamen, idCpt) {
         const idOrden = data[0].idOrden || 0;
         let plantillaHtml = '';
 
-        // Prioridad de enrutamiento a submódulos clínicos
         if (typeof ModuloOrina !== 'undefined' && ModuloOrina.esOrina(nombreExamen, nombreExamen, idCpt)) {
             plantillaHtml = ModuloOrina.renderizar(data, nombreExamen, nombreExamen, idMovimiento, idOrden);
         } else if (typeof ModuloMicrobiologia !== 'undefined' && ModuloMicrobiologia.esMicrobiologia(nombreExamen, nombreExamen)) {
@@ -644,14 +698,28 @@ async function abrirDigitacionManual(idMovimiento, nombreExamen, idCpt) {
             plantillaHtml = ModuloBioquimica.renderizar(data, nombreExamen, nombreExamen, idMovimiento, idOrden);
         }
 
-        modalBody.innerHTML = plantillaHtml;
+        if (!puedeEditar) {
+            const autorAviso = btnTrigger?.getAttribute('data-autor') || 'otro profesional';
+            const bannerBloqueo = `
+                <div class="banner-solo-lectura px-3.5 py-2.5 rounded-lg text-xs font-mono flex items-center space-x-2 mb-2">
+                    <i class="fa-solid fa-shield-halved text-sm"></i>
+                    <span>Resultado validado por <b>${autorAviso}</b>. Modo solo lectura activado (solo el autor o el Administrador pueden modificarlo).</span>
+                </div>`;
+            modalBody.innerHTML = bannerBloqueo + plantillaHtml;
+
+            modalBody.querySelectorAll('input, select, textarea').forEach(el => {
+                el.disabled = true;
+                el.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-80');
+            });
+        } else {
+            modalBody.innerHTML = plantillaHtml;
+        }
 
     } catch (e) {
         console.error("Error al abrir digitación:", e);
         modalBody.innerHTML = '<div class="p-6 bg-red-50 text-red-700 rounded-lg font-bold text-center border border-red-200"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Falla al cargar la plantilla clínica. Comuníquese con soporte de Sistemas.</div>';
     }
 }
-
 
 function cerrarModalDigitacion() { document.getElementById('modalDigitacion').classList.add('hidden'); }
 

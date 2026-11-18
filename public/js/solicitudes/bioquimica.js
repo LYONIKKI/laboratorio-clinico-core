@@ -552,7 +552,21 @@ const ModuloBioquimica = {
 
         // ---------------------------------------------------------------------
         // 6. PARÁMETROS GENERALES DE BIOQUÍMICA (GLUCOSA, UREA, CREATININA, ETC.)
+        // Filtro de desambiguación para evitar duplicados entre "CREATININA" y "CREATININA EN SANGRE"
         // ---------------------------------------------------------------------
+        let dataFiltrada = data;
+
+        if (examenUpper.includes('CREATININA') || botonUpper.includes('CREATININA')) {
+            const pideEnSangre = examenUpper.includes('EN SANGRE') || botonUpper.includes('EN SANGRE');
+            const coincidenciaExacta = data.filter(item => {
+                const sub = ModuloBioquimica.limpiarTexto(item.SubPrueba || '');
+                return pideEnSangre ? sub.includes('EN SANGRE') : !sub.includes('EN SANGRE');
+            });
+            if (coincidenciaExacta.length > 0) {
+                dataFiltrada = coincidenciaExacta;
+            }
+        }
+
         const tituloLimpio = (nombreExamenOriginal || 'EXAMEN')
             .toUpperCase()
             .replace(/^DOSAJE DE\s+/i, '')
@@ -560,7 +574,7 @@ const ModuloBioquimica = {
             .trim();
 
         let filasHtml = '';
-        data.forEach(item => {
+        dataFiltrada.forEach(item => {
             const analito = item.SubPrueba || item.Examen_Principal || 'ANALITO';
             const val = (item.Resultado_Actual || '').trim();
             let ref = (item.ValorReferencial && item.ValorReferencial !== 'N/A') ? item.ValorReferencial : 'N/A';
@@ -607,7 +621,6 @@ const ModuloBioquimica = {
                 </table>
             </div>`;
     },
-
     // -------------------------------------------------------------------------
     // CÁLCULOS AUTOMÁTICOS REACTIVOS
     // -------------------------------------------------------------------------

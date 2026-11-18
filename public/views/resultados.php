@@ -8,6 +8,7 @@
     <!-- CSS 100% Locales (Offline) Tailwind v2.2.19 -->
     <link rel="stylesheet" href="/laboratorio/public/css/tailwind.min.css">
     <link rel="stylesheet" href="/laboratorio/public/css/all.min.css">
+    <link rel="stylesheet" href="/laboratorio/public/css/auditoria_lab.css">
 </head>
 <body class="bg-gray-100 font-sans text-gray-800 h-screen flex overflow-hidden antialiased">
 
@@ -112,6 +113,7 @@
                 <input type="hidden" id="detEdadValue">
                 <input type="hidden" id="detResponsableValue">
                 <input type="hidden" id="detCargoValue">
+                <input type="hidden" id="detFechaResultadoValue">
                 <input type="hidden" id="detSeguroValue">
                 
                 <div class="flex justify-between items-start">
@@ -235,6 +237,6 @@
     <script src="/laboratorio/public/js/solicitudes/impresion.js"></script>
 
     <!-- Orquestador del Módulo Resultados -->
-    <script src="/laboratorio/public/js/resultados.js"></script>
+    <script src="/laboratorio/public/js/resultados.js?v=2"></script>
 </body>
 </html>
